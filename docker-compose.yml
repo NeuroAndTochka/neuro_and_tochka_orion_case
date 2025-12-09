@@ -61,6 +61,20 @@ services:
     networks:
       - visior
 
+  ai_orchestrator:
+    build:
+      context: ./services/ai_orchestrator
+    container_name: ai_orchestrator
+    environment:
+      ORCH_HOST: 0.0.0.0
+      ORCH_PORT: "8070"
+      ORCH_LOG_LEVEL: info
+      ORCH_MOCK_MODE: "true"
+    ports:
+      - "8070:8070"
+    networks:
+      - visior
+
 networks:
   visior:
     driver: bridge
