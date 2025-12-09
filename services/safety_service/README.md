@@ -34,3 +34,11 @@ cd services/safety_service
 ```
 
 Pass pytest flags through the helper script to target individual scenarios (e.g., `./run_tests.sh -k input`).
+
+## Docker
+
+```bash
+cd services/safety_service
+docker build -t visior-safety-service .
+docker run --rm -p 8081:8081 visior-safety-service
+```

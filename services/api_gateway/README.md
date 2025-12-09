@@ -63,3 +63,11 @@ cd services/api_gateway
 ```
 
 Pass additional args (e.g., `./run_tests.sh -k assistant`) to filter pytest cases.
+
+## Docker
+
+```bash
+cd services/api_gateway
+docker build -t visior-api-gateway .
+docker run --rm -p 8080:8080 visior-api-gateway
+```

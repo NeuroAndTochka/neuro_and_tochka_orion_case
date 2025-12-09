@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  api_gateway:
+    build:
+      context: ./services/api_gateway
+    container_name: api_gateway
+    environment:
+      API_GATEWAY_HOST: 0.0.0.0
+      API_GATEWAY_PORT: "8080"
+      API_GATEWAY_LOG_LEVEL: info
+      API_GATEWAY_SAFETY_BASE_URL: http://safety_service:8081
+      API_GATEWAY_MOCK_MODE: "true"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - safety_service
+    networks:
+      - visior
+
+  safety_service:
+    build:
+      context: ./services/safety_service
+    container_name: safety_service
+    environment:
+      SAFETY_SERVICE_HOST: 0.0.0.0
+      SAFETY_SERVICE_PORT: "8081"
+      SAFETY_SERVICE_LOG_LEVEL: info
+    ports:
+      - "8081:8081"
+    networks:
+      - visior
+
+  mcp_tools_proxy:
+    build:
+      context: ./services/mcp_tools_proxy
+    container_name: mcp_tools_proxy
+    environment:
+      MCP_PROXY_HOST: 0.0.0.0
+      MCP_PROXY_PORT: "8082"
+      MCP_PROXY_LOG_LEVEL: info
+    ports:
+      - "8082:8082"
+    networks:
+      - visior
+
+  llm_service:
+    build:
+      context: ./services/llm_service
+    container_name: llm_service
+    environment:
+      LLM_SERVICE_HOST: 0.0.0.0
+      LLM_SERVICE_PORT: "8090"
+      LLM_SERVICE_LOG_LEVEL: info
+      LLM_SERVICE_MCP_PROXY_URL: http://mcp_tools_proxy:8082/internal/mcp/execute
+      LLM_SERVICE_MOCK_MODE: "true"
+    ports:
+      - "8090:8090"
+    depends_on:
+      - mcp_tools_proxy
+    networks:
+      - visior
+
+networks:
+  visior:
+    driver: bridge

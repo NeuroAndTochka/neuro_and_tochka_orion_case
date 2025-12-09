@@ -35,3 +35,11 @@ cd services/mcp_tools_proxy
 ```
 
 Use pytest flags through the helper script to target specific tools, e.g. `./run_tests.sh -k read_doc_section`.
+
+## Docker
+
+```bash
+cd services/mcp_tools_proxy
+docker build -t visior-mcp-tools-proxy .
+docker run --rm -p 8082:8082 visior-mcp-tools-proxy
+```
