@@ -19,6 +19,17 @@ LLM Service скрывает сложность взаимодействия с 
 
 ---
 
+# 0. Implementation Notes
+
+- Скелет сервиса: `services/llm_service` (FastAPI + httpx).
+- Endpoint: `POST /internal/llm/generate` + `/health`.
+- Основной поток реализован в `core/orchestrator.py` (prompt сборка, вызов LLM runtime, MCP loop, ограничение шагов).
+- LLM runtime и MCP proxy абстрагированы клиентами (`clients/runtime.py`, `clients/mcp.py`); в mock-режиме имитируют ответы.
+- Конфигурация через `LLM_SERVICE_*` переменные (`config.py`), поддерживаются лимиты токенов, шагов, JSON-mode.
+- Юнит-тесты в `services/llm_service/tests` проверяют базовый ответ и tool-loop.
+
+---
+
 # 2. Scope / Зона ответственности
 
 ## 2.1 Входит в ответственность
