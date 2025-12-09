@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-tools-proxy"
+version = "0.1.0"
+description = "MCP Tools Proxy skeleton for Orion Visior"
+readme = "README.md"
+authors = [{name="Orion Soft"}]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.26.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.1",
+    "structlog>=23.1.0",
+    "anyio>=4.2.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.1.1",
+    "httpx>=0.27.0"
+]
+
+[tool.uvicorn]
+app = "mcp_tools_proxy.main:app"
+host = "0.0.0.0"
+port = 8082
+reload = true
