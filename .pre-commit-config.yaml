@@ -3,7 +3,9 @@ repos:
     rev: v4.6.0
     hooks:
       - id: end-of-file-fixer
+        exclude: '^(storage/|services/ingestion_service/storage/)'
       - id: trailing-whitespace
+        exclude: '^(storage/|services/ingestion_service/storage/)'
   - repo: https://github.com/pycqa/flake8
     rev: 7.1.0
     hooks:
