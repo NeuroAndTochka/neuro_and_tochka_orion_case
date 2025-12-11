@@ -37,6 +37,32 @@ CI (`.github/workflows/ci.yml`) запускает:
 2. `pre-commit run --all-files`.
 3. `pytest`.
 
+## Как собираются и устанавливаются сервисы
+Каждый микросервис — самостоятельный Python-пакет с `pyproject.toml` в каталоге `services/<name>`. Для разработки используется editable-установка:
+
+```bash
+cd services/api_gateway
+pip install -e .[dev]  # ставит runtime-зависимости + pytest/anyio
+```
+
+Повторите команду для остальных сервисов (`ai_orchestrator`, `llm_service`, `mcp_tools_proxy`, `safety_service`, `document_service`, `ingestion_service`, `retrieval_service`).
+Editable-режим позволяет видеть изменения кода без повторной сборки пакета.
+
+### Общий сценарий сборки
+1. Устанавливаем системный Python 3.10+ и `pip install -r requirements.txt` **не требуется** — зависимости описаны в каждом `pyproject.toml`.
+2. Для локальной разработки запускаем `pip install -e services/<name>[dev]`.
+   Это устанавливает:
+   - runtime-библиотеки (FastAPI, httpx, pydantic и т.д.);
+   - dev-зависимости (pytest, anyio) из `[project.optional-dependencies].dev`.
+3. Docker-образы собираются стандартно:
+   ```bash
+   docker compose build api_gateway   # или другой сервис
+   ```
+   Каждый Dockerfile внутри `services/<name>` копирует исходники, устанавливает зависимости и запускает Uvicorn.
+4. Для CI/Prod можно использовать `pip install -e "services/<name>"` или `pip install services/<name>` после `python -m build`. GitHub Actions делает editable-установку всех сервисов перед тестами (см. `.github/workflows/ci.yml`).
+
+Такой подход позволяет легко разворачивать конкретный сервис (например, `uvicorn api_gateway.main:app`) после установки зависимостей.
+
 ## Правила работы
 1. Для любой новой фичи создаём отдельную ветку от `main` и работаем только в ней.
 2. После реализации локально запускаем `pre-commit run --all-files` и `pytest`. PR без зелёных проверок не принимаются.
