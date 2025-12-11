@@ -26,12 +26,23 @@ async def query_assistant(
     await rate_limiter.check(key=f"assistant:{user.tenant_id}:{user.user_id}")
     ctx = get_request_context()
 
+    context_payload = None
+    channel = None
+    if payload.context:
+        channel = payload.context.channel
+        context_payload = payload.context.model_dump(exclude={"channel"}, exclude_none=True)
+
     safety_result = await safety_client.check_input(
         {
             "query": payload.query,
-            "tenant_id": user.tenant_id,
-            "user_id": user.user_id,
-            "context": payload.context.model_dump() if payload.context else {},
+            "channel": channel,
+            "context": context_payload or None,
+            "meta": {"trace_id": ctx.trace_id},
+            "user": {
+                "user_id": user.user_id,
+                "tenant_id": user.tenant_id,
+                "roles": user.roles,
+            },
         }
     )
     if safety_result.get("status") not in {"allowed", "monitor"}:
@@ -46,8 +57,8 @@ async def query_assistant(
             "trace_id": ctx.trace_id,
             "tenant_id": user.tenant_id,
             "user": {
-                "id": user.user_id,
-                "username": user.username,
+                "user_id": user.user_id,
+                "tenant_id": user.tenant_id,
                 "roles": user.roles,
             },
             "safety": safety_result,

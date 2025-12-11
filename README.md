@@ -14,5 +14,9 @@ This starts:
 - Safety Service on `http://localhost:8081`
 - MCP Tools Proxy on `http://localhost:8082`
 - LLM Service on `http://localhost:8090`
+- AI Orchestrator on `http://localhost:8070`
+- Document Service on `http://localhost:8060`
+- Ingestion Service on `http://localhost:8050`
+- Retrieval Service on `http://localhost:8040`
 
 Stop everything with `docker compose down`. Use `docker compose up --build api_gateway` (or another service name) to rebuild/run individually.

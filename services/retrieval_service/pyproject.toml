@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "retrieval-service"
+version = "0.1.0"
+description = "Retrieval Service skeleton for Orion Visior"
+readme = "README.md"
+authors = [{name="Orion Soft"}]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.26.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.1",
+    "structlog>=23.1.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.1.1"
+]
+
+[tool.uvicorn]
+app = "retrieval_service.main:app"
+host = "0.0.0.0"
+port = 8040
+reload = true

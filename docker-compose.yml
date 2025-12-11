@@ -75,6 +75,48 @@ services:
     networks:
       - visior
 
+  document_service:
+    build:
+      context: ./services/document_service
+    container_name: document_service
+    environment:
+      DOC_HOST: 0.0.0.0
+      DOC_PORT: "8060"
+      DOC_LOG_LEVEL: info
+      DOC_MOCK_MODE: "true"
+    ports:
+      - "8060:8060"
+    networks:
+      - visior
+
+  ingestion_service:
+    build:
+      context: ./services/ingestion_service
+    container_name: ingestion_service
+    environment:
+      INGEST_HOST: 0.0.0.0
+      INGEST_PORT: "8050"
+      INGEST_LOG_LEVEL: info
+      INGEST_MOCK_MODE: "true"
+    ports:
+      - "8050:8050"
+    networks:
+      - visior
+
+  retrieval_service:
+    build:
+      context: ./services/retrieval_service
+    container_name: retrieval_service
+    environment:
+      RETR_HOST: 0.0.0.0
+      RETR_PORT: "8040"
+      RETR_LOG_LEVEL: info
+      RETR_MOCK_MODE: "true"
+    ports:
+      - "8040:8040"
+    networks:
+      - visior
+
 networks:
   visior:
     driver: bridge

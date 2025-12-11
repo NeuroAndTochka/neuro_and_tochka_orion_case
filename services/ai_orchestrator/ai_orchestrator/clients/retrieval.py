@@ -28,4 +28,11 @@ class RetrievalClient:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="retrieval url missing")
         response = await self.http_client.post(self.settings.retrieval_url, json=query_payload, timeout=10)
         response.raise_for_status()
-        return response.json()
+        payload = response.json()
+        if isinstance(payload, dict):
+            hits = payload.get("hits", [])
+            if isinstance(hits, list):
+                return hits
+        if isinstance(payload, list):
+            return payload
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="retrieval response format invalid")

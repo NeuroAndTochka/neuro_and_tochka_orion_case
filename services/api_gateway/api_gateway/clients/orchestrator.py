@@ -16,7 +16,7 @@ class OrchestratorClient(DownstreamClient):
                 "meta": {"latency_ms": 1, "trace_id": payload.get("trace_id"), "safety": {"input": "allowed"}},
             }
         try:
-            response = await self.post_json("/internal/ai/query", payload)
+            response = await self.post_json("/internal/orchestrator/respond", payload)
         except HTTPException:
             raise
         except Exception as exc:  # pragma: no cover

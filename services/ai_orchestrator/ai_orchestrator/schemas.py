@@ -13,7 +13,9 @@ class UserContext(BaseModel):
 
 class OrchestratorRequest(BaseModel):
     conversation_id: Optional[str] = None
-    user: UserContext
+    user: Optional[UserContext] = None
+    user_id: Optional[str] = None
+    tenant_id: Optional[str] = None
     query: str
     channel: Optional[str] = None
     locale: Optional[str] = None

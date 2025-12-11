@@ -1,3 +1,5 @@
+from typing import Any, Dict
+
 from fastapi import APIRouter, Depends, Request
 
 from ai_orchestrator.core.orchestrator import Orchestrator
@@ -15,7 +17,8 @@ def get_orchestrator(request: Request) -> Orchestrator:
 
 @router.post("/respond", response_model=OrchestratorResponse)
 async def respond(
-    payload: OrchestratorRequest,
+    payload: Dict[str, Any],
     orchestrator: Orchestrator = Depends(get_orchestrator),
 ) -> OrchestratorResponse:
-    return await orchestrator.respond(payload)
+    request = OrchestratorRequest(**payload)
+    return await orchestrator.respond(request)
