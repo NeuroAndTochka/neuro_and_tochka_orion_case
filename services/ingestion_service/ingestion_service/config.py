@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     port: int = 8050
     log_level: str = "info"
 
-    storage_path: Path = Path("./storage")
+    storage_path: Path = Path("/var/lib/visior_ingestion_storage")
     mock_mode: bool = True
 
 

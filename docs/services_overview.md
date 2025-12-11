@@ -97,7 +97,7 @@
 - `POST /internal/ingestion/enqueue` — ожидает файл и заголовок `X-Tenant-ID`, возвращает `job_id`, `doc_id`, `status=queued`.
 - `POST /internal/ingestion/status` — обновляет статус задания (`processing|failed|done`), используется воркерами.
 
-**Настройки.** `INGEST_*`: `storage_path`, mock_mode.
+**Настройки.** `INGEST_*`: `storage_path` (боевой каталог по умолчанию `/var/lib/visior_ingestion_storage`; в mock-режиме автоматически используется `/tmp/visior_ingestion_storage`), mock_mode.
 
 **Расширение.** Для связи с реальной шиной (S3, SQS, Kafka) заменяем `core/storage.py` и обновляем тесты (`services/ingestion_service/tests`). При добавлении новых шагов пайплайна фиксируем новые статусы в схемах.
 

@@ -11,7 +11,7 @@ Ingestion Service принимает файлы от API Gateway, ставит �
 ## Конфигурация
 | Переменная | Описание |
 | --- | --- |
-| `INGEST_STORAGE_PATH` | Путь для временных файлов. |
+| `INGEST_STORAGE_PATH` | Путь для хранения файлов (production default — `/var/lib/visior_ingestion_storage`; в mock-режиме автоматически используется `/tmp/visior_ingestion_storage`). |
 | `INGEST_MOCK_MODE` | Включить in-memory очередь. |
 
 ## API

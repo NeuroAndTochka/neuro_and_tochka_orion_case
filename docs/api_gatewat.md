@@ -1,6 +1,6 @@
-# Technical Specification (TZ)
-## Microservice: **API Gateway**
-### Project: Orion Soft Internal AI Assistant — *Visior*
+# Техническая спецификация (ТЗ)
+## Микросервис: **API Gateway**
+### Проект: Orion Soft Internal AI Assistant — *Visior*
 
 ---
 
@@ -46,9 +46,9 @@ Gateway не содержит бизнес-логики ассистента —
 
 ---
 
-# 3. Architecture Overview
+# 3. Обзор архитектуры
 
-API Gateway — stateless HTTP сервис, разворачиваемый как NGINX+Lua, Envoy, или FastAPI proxy layer.
+API Gateway — stateless HTTP‑сервис, который можно развернуть как NGINX+Lua, Envoy или FastAPI proxy layer.
 Поддерживает горизонтальное масштабирование без сохранения внутреннего состояния.
 
 ```
@@ -66,30 +66,30 @@ Orchestrator / Ingestion / Documents / Safety
 
 ---
 
-# 4. API Endpoints (Public API)
+# 4. Публичные endpoint'ы
 
-## 4.1 Authentication
+## 4.1 Аутентификация
 
 ### `GET /api/v1/auth/me`
-- Validate token
-- Return user profile + tenant_id
+- Проверить токен.
+- Вернуть профиль пользователя вместе с `tenant_id`.
 
 ### `POST /api/v1/auth/refresh` (если используется refresh flow)
-- Validate refresh token
-- Issue new access token
+- Проверить refresh token.
+- Выдать новую пару токенов.
 
 ---
 
-## 4.2 Assistant Query
+## 4.2 Запрос ассистента
 
 ### `POST /api/v1/assistant/query`
 
 **Flow:**
-1. Auth → OK
-2. Input Safety Check
-3. Route to Orchestrator
-4. Receive answer
-5. Output formatting
+1. Проверить авторизацию.
+2. Вызвать input safety.
+3. Передать запрос в Orchestrator.
+4. Получить ответ.
+5. Сформировать payload для фронта.
 
 **Request**:
 ```json
@@ -117,29 +117,29 @@ Orchestrator / Ingestion / Documents / Safety
 
 ---
 
-## 4.3 Document Upload & Management
+## 4.3 Загрузка и управление документами
 
 ### `POST /api/v1/documents/upload`
-- multipart/form-data
-- file (PDF/Docx)
-- metadata fields (product, version, tags)
+- multipart/form-data.
+- обязательное поле `file` (PDF/DOCX).
+- метаданные `product`, `version`, `tags`.
 
 Internal route: `/internal/ingestion/enqueue`
 
 ### `GET /api/v1/documents`
-- Query list of documents for tenant
+- Вернуть список документов для текущего tenant.
 
 Internal route: `/internal/documents/list`
 
 ### `GET /api/v1/documents/{id}`
-- Get metadata
+- Вернуть метаданные конкретного документа.
 
 ---
 
-## 4.4 Healthchecks
+## 4.4 Health
 
 ### `GET /api/v1/health`
-- Returns static OK
+- Возвращает статический `{\"status\":\"ok\"}`.
 
 ---
 
@@ -147,13 +147,13 @@ Internal route: `/internal/documents/list`
 
 API Gateway вызывает следующие микросервисы:
 
-| Service             | Endpoint                                | Purpose |
-|--------------------|-------------------------------------------|---------|
-| Safety Service     | `/internal/safety/input-check`            | Validation of query |
-| AI Orchestrator    | `/internal/ai/query`                      | Main AI pipeline |
-| Ingestion Service  | `/internal/ingestion/enqueue`             | Document ingestion |
-| Document Service   | `/internal/docs/...`                      | Metadata retrieval |
-| Auth Provider      | `/oauth/introspect` / JWKS                | JWT/SSO verification |
+| Service             | Endpoint                                | Назначение |
+|--------------------|-------------------------------------------|------------|
+| Safety Service     | `/internal/safety/input-check`            | Проверка запросов |
+| AI Orchestrator    | `/internal/ai/query`                      | Основной AI-пайплайн |
+| Ingestion Service  | `/internal/ingestion/enqueue`             | Постановка документов в обработку |
+| Document Service   | `/internal/docs/...`                      | Получение метаданных |
+| Auth Provider      | `/oauth/introspect` / JWKS                | Проверка JWT/SSO |
 
 Все вызовы должны содержать:
 - `X-Request-ID` (trace_id)
@@ -172,17 +172,17 @@ API Gateway вызывает следующие микросервисы:
 
 ---
 
-# 6. Authentication & Authorization
+# 6. Аутентификация и авторизация
 
-## 6.1 Supported Modes
-- **JWT Access Tokens** (preferred)
-- **OIDC / OAuth2**
-- **SAML (optional)**
+## 6.1 Поддерживаемые режимы
+- **JWT Access Tokens** (основной режим).
+- **OIDC / OAuth2**.
+- **SAML** (опционально).
 
-## 6.2 JWT Validation
-- Проверка подписи через JWKS
-- Проверка истечения
-- Проверка `issuer`, `audience`
+## 6.2 Проверка JWT
+- Проверка подписи через JWKS.
+- Проверка срока действия.
+- Проверка `issuer` и `audience`.
 
 ## 6.3 Tenant Isolation
 Каждый запрос содержит:
@@ -198,21 +198,21 @@ API Gateway вызывает следующие микросервисы:
 
 # 7. Rate Limiting
 
-## 7.1 Levels
-1. per IP
-2. per user
-3. per tenant
-4. per endpoint
+## 7.1 Уровни
+1. по IP;
+2. по пользователю;
+3. по tenant;
+4. по endpoint.
 
-## 7.2 Requirements
-- Burst limit: 10 req/sec
-- Sustained limit: 2 req/sec per user
-- Heavy endpoints (`upload`) — отдельные лимиты
+## 7.2 Требования
+- краткосрочный лимит: 10 запросов/сек;
+- долгосрочный лимит: 2 запрос/сек на пользователя;
+- тяжёлые endpoint'ы (`upload`) — отдельные лимиты.
 
-## 7.3 Implementation
-- FastAPI
-- Envoy rate-limit-service
-- Redis-based limiter
+## 7.3 Реализация
+- встроенный FastAPI-лимитер;
+- Envoy rate-limit-service;
+- Redis как хранилище счётчиков.
 
 ---
 

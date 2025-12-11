@@ -1,53 +1,40 @@
-## Orion Soft Internal AI Assistant a.k.a `Visior`
+# Документация по API Orion Soft — Visior
 
----
+Документ описывает все внешние (`/api/v1/...`) и внутренние (`/internal/...`) HTTP‑контракты платформы. Все примеры приведены в формате JSON, поля и названия endpoint'ов иллюстрируют финальные продовые значения.
 
-## 0. Conventions
+## 0. Общие правила
+- Передача данных: JSON поверх HTTPS, кодировка UTF‑8.
+- Версионирование: публичные URL начинаются с `/api/v1`, внутренние — с `/internal`.
+- Корреляция запросов: используем заголовок `X-Request-ID` (его генерирует API Gateway и прокидывает вниз по цепочке).
+- Аутентификация: заголовок `Authorization: Bearer <token>`; внутренние сервисы могут дополнительно использовать сервисные токены.
 
-- All requests are JSON over HTTPS, unless указано иное.
-- Charset: UTF‑8.
-- Versioning: `/api/v1/...` для public API.
-- Correlation:
-  - `X-Request-ID` — обязательный trace ID от gateway.
-- Auth:
-  - `Authorization: Bearer <token>` (или другой корпоративный механизм).
-
-### 0.1 Common Error Format
+### 0.1 Формат ошибки
 ```json
 {
   "error": {
     "code": "STRING_CODE",
-    "message": "Human-readable explanation",
+    "message": "Короткое описание проблемы",
     "details": {
-      "field": "optional structured info"
+      "field": "опциональные детали"
     }
   },
   "trace_id": "uuid-or-trace"
 }
-````
----
-
-# 1. Public API — Frontend ↔ Backend (API Gateway)
-
-Все эти эндпоинты видит фронт. Внутри API Gateway может звать другие сервисы, но фронту это не важно.
-
-Базовый префикс: `/api/v1`
+```
 
 ---
 
-## 1.1 Authentication & Session
+# 1. Публичный API (Frontend ↔ API Gateway)
+Базовый префикс: `/api/v1`. Эти эндпоинты доступны клиентским приложениям и интеграциям.
 
-> Вариант: если аутентификация делается не через этот backend, этот раздел можно опустить / адаптировать.
+## 1.1 Аутентификация
+### `GET /api/v1/auth/me`
+Возвращает профиль текущего пользователя.
 
-### 1.1.1 `GET /api/v1/auth/me`
+**Заголовки**
+- `Authorization: Bearer <token>`
 
-Вернуть информацию о текущем пользователе и его правах.
-
-Headers:
-
-- Authorization: Bearer <token>
-
-Response 200:
+**Ответ 200**
 ```json
 {
   "user_id": "u_123",
@@ -57,24 +44,23 @@ Response 200:
   "tenant_id": "tenant_1"
 }
 ```
----
 
-## 1.2 Assistant Chat / Q&A
+### `POST /api/v1/auth/refresh` (если используется refresh-flow)
+Принимает refresh token и возвращает новую пару `access_token` / `refresh_token`.
 
-### 1.2.1 `POST /api/v1/assistant/query`
+## 1.2 Ассистент
+### `POST /api/v1/assistant/query`
+Основной чат-эндпоинт. Перед вызовом требуется пройти rate limit и input safety.
 
-Основной эндпоинт для фронта: задать вопрос ассистенту.
+**Заголовки**
+- `Authorization: Bearer <token>`
+- `X-Request-ID: <uuid>` (опционально, если генерируется на клиенте)
 
-Headers:
-
-- Authorization: Bearer <token>
-- X-Request-ID: <uuid> (опционально, если фронт умеет)
-
-Request body:
+**Request**
 ```json
 {
-  "query": "How to configure LDAP integration in Orion soft X?",
-  "language": "en",
+  "query": "Расскажи, как настроить LDAP в Orion X",
+  "language": "ru",
   "context": {
     "channel": "web",
     "ui_session_id": "sess_123",
@@ -82,10 +68,11 @@ Request body:
   }
 }
 ```
-Response 200:
+
+**Response 200**
 ```json
 {
-  "answer": "To configure LDAP integration in Orion soft X, you should...",
+  "answer": "Чтобы настроить LDAP в Orion X, выполните...",
   "sources": [
     {
       "doc_id": "doc_123",
@@ -106,44 +93,28 @@ Response 200:
   }
 }
 ```
----
 
-## 1.3 Documents Management (Upload / Status / List)
+## 1.3 Управление документами
+### `POST /api/v1/documents/upload`
+Загрузка нового документа. Тип запроса — `multipart/form-data`.
 
-Документы загружаются через API Gateway, далее ingestion работает асинхронно.
+**Поля формы**
+- `file` — обязательный PDF/DOCX.
+- `product`, `version`, `tags` — опциональные метаданные.
 
-### 1.3.1 `POST /api/v1/documents/upload`
-
-Загрузка нового документа для индексации.
-
-Тип запроса: multipart/form-data
-
-Fields:
-
-- file: бинарник PDF/Docx.
-- product (optional): строка, напр. "Orion X".
-- version (optional): напр. "1.2".
-- tags (optional): JSON‑строка со списком тегов.
-
-Response 202:
+**Response 202**
 ```json
 {
   "doc_id": "doc_123",
   "status": "uploaded"
 }
 ```
----
 
-### 1.3.2 `GET /api/v1/documents`
+### `GET /api/v1/documents`
+Возвращает список документов арендатора.
 
-Список документов пользователя/тенанта.
+**Параметры** `status`, `product`, `tag`, `search` (опционально).
 
-Query params (optional):
-
-- status — фильтр по статусу (uploaded, processing, indexed, failed).
-- product, tag, search — фильтры/поиск.
-
-Response 200:
 ```json
 [
   {
@@ -155,70 +126,19 @@ Response 200:
     "tags": ["admin", "ldap"],
     "created_at": "2025-12-03T10:15:00Z",
     "updated_at": "2025-12-03T10:20:00Z"
-  },
-  {
-    "doc_id": "doc_124",
-    "name": "API_Reference.pdf",
-    "status": "processing",
-    "product": "Orion API"
   }
 ]
 ```
----
 
-### 1.3.3 `GET /api/v1/documents/{doc_id}`
+### `GET /api/v1/documents/{doc_id}`
+Детальная карточка документа (включая секции и страницы).
 
-Детали документа.
+### `GET /api/v1/documents/{doc_id}/status`
+Упрощённый endpoint для периодического запроса статуса ingestion.
 
-Response 200:
-```json
-{
-  "doc_id": "doc_123",
-  "name": "Orion_X_Admin_Guide.pdf",
-  "status": "indexed",
-  "product": "Orion X",
-  "version": "1.2",
-  "tags": ["admin", "ldap"],
-  "pages": 120,
-  "sections": [
-    {
-      "section_id": "sec_1",
-      "title": "Overview",
-      "page_start": 1,
-      "page_end": 3
-    },
-    {
-      "section_id": "sec_ldap",
-      "title": "LDAP Configuration",
-      "page_start": 6,
-      "page_end": 12
-    }
-  ]
-}
-```
----
-
-### 1.3.4 `GET /api/v1/documents/{doc_id}/status`
-
-Упрощённый эндпоинт для polling статуса ingestion.
-
-Response 200:
-```json
-{
-  "doc_id": "doc_123",
-  "status": "indexed",
-  "last_error": null
-}
-```
----
-
-## 1.4 Health & Diagnostics
-
-### 1.4.1 `GET /api/v1/health`
-
-Простой healthcheck для фронта/мониторинга.
-
-Response 200:
+## 1.4 Health
+### `GET /api/v1/health`
+Простой ответ для мониторинга.
 ```json
 {
   "status": "ok",
@@ -226,20 +146,15 @@ Response 200:
   "time": "2025-12-04T12:00:00Z"
 }
 ```
----
-
-# 2. Internal APIs — Inter‑Service Calls
-
-Все internal‑эндпоинты можно держать под префиксом /internal/...
-Они не должны быть доступны извне (только через private network / service‑mesh).
 
 ---
 
-## 2.1 AI Orchestrator API
+# 2. Внутренние API (Service ↔ Service)
+Эти endpoint'ы закрыты сетью или mesh'ем и доступны только другим микросервисам.
 
-### 2.1.1 `POST /internal/ai/query`
-
-Request body:
+## 2.1 AI Orchestrator
+### `POST /internal/orchestrator/respond`
+Получает запрос от Gateway и orchestrat'ит RAG‑пайплайн.
 ```json
 {
   "user": {
@@ -247,8 +162,8 @@ Request body:
     "tenant_id": "tenant_1",
     "roles": ["user"]
   },
-  "query": "How to configure LDAP integration in Orion soft X?",
-  "language": "en",
+  "query": "Как настроить LDAP?",
+  "language": "ru",
   "context": {
     "channel": "web",
     "conversation_id": "conv_42"
@@ -256,119 +171,41 @@ Request body:
   "trace_id": "abc-def-123"
 }
 ```
-Response:
+Ответ содержит `answer`, `sources`, `safety`, `telemetry`.
+
+## 2.2 Safety Service
+Префикс `/internal/safety`.
+
+### `POST /internal/safety/input-check`
+Проверяет пользовательский вопрос.
 ```json
 {
-  "answer": "To configure LDAP integration...",
-  "sources": [
-    {
-      "doc_id": "doc_123",
-      "section_id": "sec_ldap",
-      "page_start": 6,
-      "page_end": 7
-    }
-  ],
-  "meta": {
-    "latency_ms": 1450,
-    "safety_input": "allowed",
-    "safety_output": "allowed"
-  }
-}
-```
----
-
-## 2.2 Safety Service API
-
-Базовый префикс: /internal/safety
-
-### 2.2.1 `POST /internal/safety/input-check`
-
-Request:
-```json
-{
-  "user": {
-    "user_id": "u_123",
-    "tenant_id": "tenant_1",
-    "roles": ["user"]
-  },
-  "query": "How to hack Orion soft servers?",
+  "user": {"user_id": "u_123", "tenant_id": "tenant_1", "roles": ["user"]},
+  "query": "Как взломать Orion?",
   "channel": "web",
   "trace_id": "abc-def-123"
 }
 ```
-Response (пример блокировки):
+Ответ:
 ```json
 {
   "status": "blocked",
   "reason": "disallowed_content",
-  "message": "This request violates security policy.",
+  "message": "Запрос нарушает политику",
   "transformed_query": null
 }
 ```
-Response (пример transform):
+
+### `POST /internal/safety/output-check`
+Проверяет ответ модели перед выдачей. При `status="sanitized"` возвращает `sanitized_answer`.
+
+## 2.3 Retrieval Service
+### `POST /internal/retrieval/search`
 ```json
 {
-  "status": "transformed",
-  "reason": "pii_sanitized",
-  "message": "Sensitive data removed from query.",
-  "transformed_query": "How to configure LDAP integration?"
-}
-```
----
-
-### 2.2.2 `POST /internal/safety/output-check`
-
-Request:
-```json
-{
-  "user": {
-    "user_id": "u_123",
-    "tenant_id": "tenant_1",
-    "roles": ["user"]
-  },
-  "query": "How to configure LDAP integration?",
-  "answer": "Full answer text from LLM...",
-  "sources": [
-    {
-      "doc_id": "doc_123",
-      "section_id": "sec_ldap",
-      "page_start": 6,
-      "page_end": 7
-    }
-  ],
-  "trace_id": "abc-def-123"
-}
-```
-Response (allow):
-```json
-{
-  "status": "allowed",
-  "sanitized_answer": null,
-  "reason": null
-}
-```
-Response (sanitize):
-```json
-{
-  "status": "sanitized",
-  "sanitized_answer": "I cannot provide detailed hacking instructions. However, for secure configuration...",
-  "reason": "disallowed_content_trimmed"
-}
-```
----
-
-## 2.3 Retrieval Service API
-
-Префикс: /internal/retrieval
-
-### 2.3.1 `POST /internal/retrieval/search`
-
-Request:
-```json
-{
-  "query": "How to configure LDAP integration in Orion soft X?",
+  "query": "LDAP в Orion",
   "tenant_id": "tenant_1",
-  "language": "en",
+  "language": "ru",
   "params": {
     "max_docs": 20,
     "max_sections": 50,
@@ -378,165 +215,46 @@ Request:
   "trace_id": "abc-def-123"
 }
 ```
-Response:
-```json
-{
-  "chunks": [
-    {
-      "chunk_id": "ch_2001",
-      "doc_id": "doc_123",
-      "section_id": "sec_ldap",
-      "text": "To configure LDAP integration in Orion soft X, you must...",
-      "tokens": 350,
-      "page_start": 6,
-      "page_end": 7,
-      "score": 0.92,
-      "mcp_link": {
-        "doc_id": "doc_123",
-        "page_start": 6,
-        "page_end": 7
-      }
-    }
-  ],
-  "used_docs": [
-    {
-      "doc_id": "doc_123",
-      "score": 0.87
-    }
-  ],
-  "meta": {
-    "retrieval_time_ms": 130,
-    "trace_id": "abc-def-123"
-  }
-}
-```
----
+**Response** содержит массив `chunks`, список `used_docs` и `meta.retrieval_time_ms`.
 
-## 2.4 LLM Service API
-
-Префикс: /internal/llm
-
-### 2.4.1 `POST /internal/llm/generate`
-
-Request:
+## 2.4 LLM Service
+### `POST /internal/llm/generate`
 ```json
 {
   "mode": "rag",
   "system_prompt": "You are Orion soft internal assistant...",
-  "messages": [
-    {
-      "role": "user",
-      "content": "How to configure LDAP integration?"
-    }
-  ],
-  "context_chunks": [
-    {
-      "doc_id": "doc_123",
-      "section_id": "sec_ldap",
-      "text": "To configure LDAP integration in Orion soft X, you must...",
-      "page_start": 6,
-      "page_end": 7
-    }
-  ],
-  "generation_params": {
-    "max_tokens": 512,
-    "temperature": 0.2,
-    "top_p": 0.9
-  },
+  "messages": [{"role": "user", "content": "Как настроить LDAP?"}],
+  "context_chunks": [{"doc_id": "doc_123", "section_id": "sec_ldap", "text": "...", "page_start": 6, "page_end": 7}],
+  "generation_params": {"max_tokens": 512, "temperature": 0.2, "top_p": 0.9},
   "trace_id": "abc-def-123"
 }
 ```
-Response:
-```json
-{
-  "answer": "To configure LDAP integration in Orion soft X, you should...",
-  "used_tokens": {
-    "prompt": 1200,
-    "completion": 220
-  },
-  "tools_called": [
-    {
-      "name": "read_doc_section",
-      "arguments": {
-        "doc_id": "doc_123",
-        "page_start": 6,
-        "page_end": 7
-      }
-    }
-  ],
-  "meta": {
-    "model_name": "local-llama-3-8b",
-    "latency_ms": 900,
-    "trace_id": "abc-def-123"
-  }
-}
-```
+Ответ содержит `answer`, `used_tokens`, `tools_called`, `meta`.
+
+## 2.5 Document Service
+Префикс `/internal/documents`.
+- `GET /internal/documents` — список.
+- `GET /internal/documents/{doc_id}` — карточка.
+- `GET /internal/documents/{doc_id}/sections/{section_id}` — секция.
+- `POST /internal/documents/status` — обновление статуса ingestion.
+
+## 2.6 Ingestion Service
+Префикс `/internal/ingestion`.
+
+### `POST /internal/ingestion/enqueue`
+Принимает multipart с файлом и метаданными, возвращает `job_id`/`doc_id`/`status`.
+
+### `POST /internal/ingestion/status`
+Body: `{"job_id": "ing_456", "status": "processing", "error": null}`.
+
+## 2.7 Асинхронные события
+- Очередь `documents_to_ingest`: задания на обработку.
+- Топик `document_ingested`: `doc_id`, `tenant_id`, `status`, количество секций/чанков.
+- Топик `ingestion_failed`: `doc_id`, `error`, количество попыток.
+
 ---
 
-## 2.5 Ingestion Service API
-
-Префикс: /internal/ingestion
-
-### 2.5.1 `POST /internal/ingestion/enqueue`
-
-Request:
-```json
-{
-  "doc_id": "doc_123",
-  "tenant_id": "tenant_1",
-  "file_path": "s3://bucket/orion/doc_123.pdf",
-  "product": "Orion X",
-  "version": "1.2",
-  "tags": ["admin", "ldap"],
-  "trace_id": "abc-def-123"
-}
-```
-Response:
-```json
-{
-  "job_id": "ing_456",
-  "status": "queued"
-}
-```
----
-
-## 2.6 Async APIs — Events & Queues
-
-### 2.6.1 Queue: documents_to_ingest
-```json
-{
-  "job_id": "ing_456",
-  "doc_id": "doc_123",
-  "tenant_id": "tenant_1",
-  "file_path": "s3://bucket/orion/doc_123.pdf",
-  "created_at": "2025-12-04T10:00:00Z"
-}
-```
-### 2.6.2 Topic: document_ingested
-```json
-{
-  "doc_id": "doc_123",
-  "tenant_id": "tenant_1",
-  "status": "indexed",
-  "sections": 10,
-  "chunks": 120,
-  "duration_ms": 3500
-}
-```
-### 2.6.3 Topic: ingestion_failed
-```json
-{
-  "doc_id": "doc_124",
-  "tenant_id": "tenant_1",
-  "status": "failed",
-  "error": "PDF parse error: corrupted file",
-  "attempts": 3
-}
-```
----
-
-## 3. Summary
-
-- Part 1 (Public API): фронт ↔ backend через /api/v1/...
-- Part 2 (Internal API): контракты между AI Orchestrator, Safety, Retrieval, LLM и Ingestion.
-- Async модель: ingestion и события через брокер сообщений.
+# 3. Сводка
+- `/api/v1/...` — публичные запросы от UI/интеграций.
+- `/internal/...` — внутренние сервисы (Gateway ↔ Orchestrator ↔ Safety ↔ Retrieval ↔ LLM ↔ Ingestion ↔ Document Service).
+- Асинхронная модель: ingestion публикует события для синхронизации статусов.

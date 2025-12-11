@@ -1,44 +1,46 @@
-# neuro_and_tochka_orion_case
+# Orion Soft — Visior Backend
 
-## Running services locally with Docker
+Моно-репозиторий для внутренних микросервисов ассистента Visior:
 
-Each microservice has its own `Dockerfile` under `services/<service_name>`. To build and run all skeleton services together:
+- API Gateway (edge-слой, безопасность, документы)
+- Safety Service (input/output guard)
+- AI Orchestrator (управление RAG-пайплайном)
+- LLM Service (генерация, MCP)
+- MCP Tools Proxy (инструменты доступа к контенту)
+- Document / Ingestion / Retrieval service
+
+Полезные спецификации и схемы лежат в `docs/`.
+
+## Как запустить
+Каждый сервис имеет свой `Dockerfile`. Для запуска всего стека:
 
 ```bash
 docker compose up --build
 ```
 
-This starts:
+Порты по умолчанию: API Gateway — `localhost:8080`, Safety — `8081`, MCP — `8082`, LLM — `8090`, Orchestrator — `8070`, Document — `8060`, Ingestion — `8050`, Retrieval — `8040`.
 
-- API Gateway on `http://localhost:8080`
-- Safety Service on `http://localhost:8081`
-- MCP Tools Proxy on `http://localhost:8082`
-- LLM Service on `http://localhost:8090`
-- AI Orchestrator on `http://localhost:8070`
-- Document Service on `http://localhost:8060`
-- Ingestion Service on `http://localhost:8050`
-- Retrieval Service on `http://localhost:8040`
+Остановить — `docker compose down`. Для перезапуска конкретного сервиса используйте `docker compose up --build <service_name>`.
 
-Stop everything with `docker compose down`. Use `docker compose up --build api_gateway` (or another service name) to rebuild/run individually.
+## Код-стайл и проверки
+- Питон: `flake8` + `flake8-bugbear`, конфиг `.flake8`.
+- Автоматические проверки через `pre-commit` (end-of-file, trimming, flake8).
+  ```bash
+  pip install pre-commit
+  pre-commit install
+  pre-commit run --all-files
+  ```
+- Тесты: `pytest` в корне (покрывает все сервисы + E2E).
 
-## Инструменты качества
+CI (`.github/workflows/ci.yml`) запускает:
+1. Установку Python 3.10 + editable зависимостей всех сервисов.
+2. `pre-commit run --all-files`.
+3. `pytest`.
 
-### Pre-commit и Flake8
-Мы используем [pre-commit](https://pre-commit.com/) для локального запуска `flake8` и базовых хуков форматирования.
+## Правила работы
+1. Для любой новой фичи создаём отдельную ветку от `main` и работаем только в ней.
+2. После реализации локально запускаем `pre-commit run --all-files` и `pytest`. PR без зелёных проверок не принимаются.
+3. Создавая pull request, чётко описываем суть изменения (что сделано, зачем, какие тесты).
+4. **Строго запрещено** самому аппрувить/мерджить собственные PR — всегда нужен независимый ревьюер.
 
-```bash
-pip install pre-commit
-pre-commit install           # ставит git-хуки
-pre-commit run --all-files   # запустить проверки вручную
-```
-
-Файл конфигурации — `.pre-commit-config.yaml`, правила линтера описаны в `.flake8`.
-
-### CI
-Каждый push и pull request к `main` запускает workflow `.github/workflows/ci.yml`. Он:
-
-1. Устанавливает Python 3.10 и все сервисы в editable-режиме с dev-зависимостями.
-2. Запускает `pre-commit run --all-files` (то же, что и локальный flake8).
-3. Выполняет `pytest`, что покрывает юнит- и интеграционные тесты.
-
-Перед созданием PR желательно выполнить `pre-commit run --all-files` и `pytest` локально для более быстрого review.
+Соблюдение этих правил гарантирует, что пайплайн остаётся стабильным, а изменения — прозрачными.

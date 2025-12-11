@@ -1,290 +1,139 @@
-# Backend Architecture Documentation
-## Orion Soft Internal AI Assistant
+# Документация по backend-архитектуре
+## Orion Soft Internal AI Assistant — Visior
 
 ---
 
-## 1. Goals & Non‑Goals
+## 1. Цели и ограничения
+### 1.1 Цели
+- Построить надёжный и расширяемый backend для RAG-ассистента.
+- Поддержать многоступенчатый retrieval (doc → section → chunk) и гибкую оркестрацию.
+- Гарантировать безопасность (Input/Output Safety, tenant isolation).
+- Автоматизировать ingestion: парсинг, chunking, summary, embeddings.
+- Инкапсулировать работу с LLM/Tooling в отдельных сервисах.
+- Сохранить модульность и простоту для команды разработки.
 
-### 1.1 Goals
-- Создать надёжный и расширяемый backend для AI‑ассистента с RAG.
-- Поддержать многоступенчатый retrieval (doc → section → chunk).
-- Обеспечить безопасную обработку запросов (Input/Output Safety).
-- Поддержать ingestion документов: парсинг, chunking, summary, embeddings.
-- Инкапсулировать работу с LLM через единый сервис (LLM Gateway).
-- Обеспечить простой для разработки микросервисный дизайн.
-
-### 1.2 Non‑Goals
-- Не создавать чрезмерно сложный сервис‑мэш.
-- Не описывать низкоуровневые API‑эндпоинты.
-- Не привязываться к конкретному вендору LLM/VectorDB.
-
----
-
-## 2. High-Level Architecture
-
-### 2.1 Services Overview
-- **API Gateway**
-- **AI Orchestrator**
-- **Safety Service** (Input Guard + Output Guard)
-- **Retrieval Service**
-- **LLM Service** (RAG + MCP tool-calls)
-- **Ingestion Service**
-- *(optional)* **Tools/MCP Proxy**
-
-### 2.2 Infrastructure Components
-- **Vector DB** — хранение doc/section/chunk embeddings.
-- **Document Store** — PDF/Docx файлы.
-- **Metadata DB** — документы, секции, статусы ingestion, пользователи.
-- **Message Broker** — асинхронные задачи.
-- **Policy Store** — правила безопасности и RBAC.
-- **Logging & Metrics** — централизованные логи и метрики.
+### 1.2 Не цели
+- Создавать сложный сервис-мэш или tightly coupled монолит.
+- Привязываться к конкретному вендору LLM/VectorDB.
+- Детально описывать UI и клиентские приложения.
 
 ---
 
-## 3. Service Responsibilities
+## 2. Высокоуровневая архитектура
+### 2.1 Сервисы
+- **API Gateway** — edge-слой, авторизация, safety input, документы.
+- **AI Orchestrator** — orchestration RAG, вызов Retrieval/LLM/Safety.
+- **Safety Service** — input guard + output guard.
+- **Retrieval Service** — поиск по векторам/метаданным.
+- **LLM Service** — генерация, tool-loop, MCP.
+- **Ingestion Service** — обработка и индексация документов.
+- **MCP Tools Proxy** — исполнение инструментов (по требованию).
+- **Document Service** — метаданные, статусы, секции.
+
+### 2.2 Инфраструктура
+- **Vector DB** (doc/section/chunk embeddings).
+- **Object Storage** (PDF/Docx).
+- **Metadata DB** (PostgreSQL/похожая СУБД).
+- **Message Broker** (очереди ingestion, уведомления).
+- **Policy Store** (OPA/Rego, конфиги security).
+- **Logging & Metrics** (ELK/Prometheus, централизованные trace).
 
 ---
 
+## 3. Ответственность сервисов
 ### 3.1 API Gateway
-**Responsibilities:**
-- Принимает запросы клиентов (Web/Chat/Integrations).
-- AuthN/AuthZ: JWT / OAuth2 / SSO.
-- Rate limiting.
-- Вызов Safety Input Guard.
-- Роутинг запросов в AI Orchestrator.
-- Роутинг upload‑запросов в очередь ingestion.
-- Генерация trace_id и логирование.
+- Принимает внешние запросы (UI, чат, интеграции).
+- Выполняет AuthN/AuthZ и rate limit.
+- Вызывает Safety input guard.
+- Отправляет payload в Orchestrator и downstream сервисы.
+- Управляет загрузкой документов → Ingestion Service.
+- Формирует trace_id и обеспечивает аудит.
 
-**Not responsible for:**
-LLM, RAG, VectorDB.
+### 3.2 AI Orchestrator
+- Принимает нормализованный запрос.
+- Инициирует поиск (Retrieval Service), собирает контекст.
+- Подготавливает payload для LLM Service.
+- Вызывает Safety output guard и формирует ответ.
+- Сохраняет телеметрию (latency, tool_steps, источник).
 
----
-
-### 3.2 Safety Service
-**Subcomponents:**
-- **Input Guard**
-- **Output Guard**
-
-**Input Guard responsibilities:**
-- Content safety (вред, терроризм, взлом и др.).
-- PII/DLP фильтрация (пароли, секреты, токены).
-- Tenant isolation и RBAC.
-- Sanitize/transform/deny запроса.
-
-**Output Guard responsibilities:**
-- Проверка ответа от LLM.
-- Фильтрация опасного или расходящегося с политикой контента.
-- Проверка leakage: секреты, внутренние конфиги, tenant‑данные.
-- Санитизация или блокировка ответа.
-
----
-
-### 3.3 AI Orchestrator
-**Role:** главный управляющий компонент AI‑пайплайна.
-
-**Responsibilities:**
-- Получение «чистого» запроса от API Gateway.
-- Определение типа запроса.
-- Управление retrieval‑процессом:
-  - doc/section/chunk search (через Retrieval Service),
-  - reranking,
-  - построение контекста (token budget).
-- Формирование промпта для LLM Service.
-- Обработка MCP tool‑calls от LLM.
-- Передача candidate response через Output Guard.
-- Обработка ошибок, timeouts, fallback.
-- Полный trace цепочки.
-
----
+### 3.3 Safety Service
+- Input guard (блокировка вредоносных или PII-запросов).
+- Output guard (sanitize/block ответов LLM).
+- Логи + статистика по политикам.
 
 ### 3.4 Retrieval Service
-**Responsibilities:**
-- **Document‑level retrieval**.
-- **Section‑level retrieval** (основная точка входа).
-- **Chunk‑level retrieval**.
-- Hybrid search: dense + BM25.
-- Reranking (rule-based or ML).
-- Context builder:
-  - токен‑лимит,
-  - разнообразие документов,
-  - приоритет релевантных секций.
-- Возврат готового набора чанков + источников.
-
-**Data Access:**
-- Vector DB для индексов.
-- Metadata DB для документов/секций.
-
----
+- Запрос к Vector DB + keyword search.
+- Объединение doc/section/chunk результатов.
+- Reranking, построение context_chunks.
 
 ### 3.5 LLM Service
-**Responsibilities:**
-- Обёртка над LLM (локальная/внешняя).
-- Chat + RAG inference.
-- Prompt construction (system + context + user).
-- Tool‑call handler (MCP):
-  - чтение разделов документа,
-  - поиск по документам,
-  - безопасные внутренние API.
-- Управление параметрами модели (температура, max tokens).
+- Принимает GenerateRequest от Orchestrator.
+- Вызывает runtime (OpenAI-compatible или on-prem модель).
+- Управляет MCP tool-call циклом, возвращает telemetry, usage, sources.
+
+### 3.6 MCP Tools Proxy
+- Реализует инструменты (read_doc_section, local_search и т.п.).
+- Ограничивает вызовы (rate limit, policy).
+
+### 3.7 Ingestion Service
+- Получает задания на обработку документов.
+- Парсит, chunk'ит, строит summary и embeddings.
+- Обновляет статусы и публикует события (`document_ingested`, `ingestion_failed`).
+
+### 3.8 Document Service
+- Хранит метаданные, секции, историю статусов.
+- Предоставляет API для Gateway, MCP, Retrieval.
 
 ---
 
-### 3.6 Ingestion Service
-**Responsibilities:**
-- Асинхронный ingestion после загрузки документа.
-- Парсинг PDF/Docx.
-- Разбиение на секции и чанки.
-- Генерация summary.
-- Получение embeddings (doc/section/chunk).
-- Запись индексов в Vector DB.
-- Обновление статуса документа.
-- Логирование ошибок ingestion.
+## 4. Потоки данных
+### 4.1 Пользовательский запрос
+1. UI → API Gateway (Auth + rate limit + input safety).
+2. Gateway → Orchestrator (`trace_id`, user context, safety результат).
+3. Orchestrator → Retrieval Service (поиск контекста).
+4. Orchestrator → LLM Service (RAG + MCP loop).
+5. LLM Service ↔ MCP Tools Proxy (при необходимости).
+6. Orchestrator → Safety output.
+7. Orchestrator → Gateway → UI (ответ + источники + метаданные).
+
+### 4.2 Ingestion
+1. Upload (Gateway) → Ingestion Service (через queue/REST).
+2. Ingestion скачивает документ, парсит, формирует секции/чанки.
+3. Сохраняет embeddings в Vector DB, метаданные в Document Service.
+4. Публикует событие `document_ingested` или `ingestion_failed`.
+5. Gateway/Document Service обновляют статусы для UI.
 
 ---
 
-## 4. Data Layer
+## 5. Безопасность
+- Двойной safety-контур (input/output).
+- Tenant isolation на уровне токенов, заголовков и хранилищ.
+- Логирование trace_id, user_id, tenant_id, status.
+- Rate limit на пользователе/tenant/ip.
+- MCP-инструменты работают в sandbox и проверяются Safety.
 
 ---
 
-### 4.1 Vector DB Structure
-- `doc_index`:
-  - doc_id
-  - doc_embedding
-  - metadata
-- `section_index`:
-  - section_id
-  - summary
-  - summary_embedding
-  - doc_id
-- `chunk_index`:
-  - chunk_id
-  - chunk_text
-  - chunk_embedding
-  - doc_id, section_id
-  - token_count
-  - page ranges / offsets for MCP
+## 6. Наблюдаемость
+- Метрики latency по каждому сервису (p50/p95/p99).
+- Количество safety-блокировок/санитизаций.
+- Ингестия: throughput, % отказов, среднее время обработки.
+- MCP usage: количество tool-call'ов, top tools.
+- Health endpoint'ы (/api/v1/health, /internal/health/*).
 
 ---
 
-### 4.2 Metadata DB Schema
-Entities:
-
-**documents**
-- doc_id
-- name
-- source
-- tags
-- file_path
-- product / version
-- status (`uploaded`, `processing`, `indexed`, `failed`)
-- timestamps
-
-**sections**
-- section_id
-- doc_id
-- title
-- pages
-- summary
-
-**chunks**
-- chunk_id
-- doc_id
-- section_id
-- text
-- tokens
-- page ranges
-
-**ingestion_jobs**
-- job_id
-- doc_id
-- status
-- error_log
+## 7. Деплой и тестирование
+- Локально: `docker compose up --build`.
+- Тестирование: `pytest` в корне запускает unit + e2e (`tests/test_pipeline_integration.py`).
+- Линтинг: `pre-commit run --all-files` (flake8 + базовые хуки).
+- CI: GitHub Actions (`.github/workflows/ci.yml`).
+- Production: Kubernetes (Deployment + HPA) или аналогичная платформа.
 
 ---
 
-## 5. Message Broker Usage
-
-Queues/topics:
-- `documents_to_ingest` — ingestion pipeline.
-- `document_ingested`, `ingestion_failed` — события.
-- `audit_events` — логи безопасности/LLM.
-
-Minimal guarantees:
-- At‑least‑once delivery.
-- Dead-letter queue for ingestion failures.
-
----
-
-## 6. Cross‑Cutting Concerns
-
-### 6.1 Observability
-- Central logging system (trace_id on all logs).
-- Metrics:
-  - latency по сервисам,
-  - ошибки по сервисам,
-  - LLM token usage,
-  - ingestion throughput,
-  - safety block/allow ratio.
-- Distributed tracing (OpenTelemetry).
-
----
-
-### 6.2 Security
-- TLS everywhere (external + internal).
-- mTLS или сетевые ACL для внутренних сервисов.
-- Safety‑контур:
-  - Input Guard → защищает inference pipeline,
-  - Output Guard → защищает пользователя/данные.
-- Secrets management: никакие токены в коде, только vault.
-
----
-
-### 6.3 Scalability
-- Stateless сервисы масштабируются горизонтально:
-  - API Gateway
-  - AI Orchestrator
-  - Retrieval Service
-  - LLM Service
-  - Safety Service
-- Ingestion Service масштабируется количеством воркеров.
-- Vector DB и Metadata DB — кластер.
-
----
-
-## 7. Main System Flows
-
----
-
-### 7.1 User Query Flow
-
-1. UI → API Gateway
-2. API Gateway → Safety Input Guard
-3. API Gateway → AI Orchestrator
-4. Orchestrator → Retrieval Service → Vector DB
-5. Orchestrator → LLM Service (RAG)
-6. LLM Service ↔ MCP (опциональные tool‑calls)
-7. LLM Service → Orchestrator
-8. Orchestrator → Safety Output Guard
-9. Orchestrator → API Gateway → UI
-
----
-
-### 7.2 Document Ingestion Flow
-
-1. UI → API Gateway → enqueue `documents_to_ingest`
-2. Ingestion Service consumes task
-3. Parses → chunks → summaries → embeddings
-4. Writes to Vector DB / Metadata DB
-5. Updates status (`indexed`)
-
----
-
-# Summary
-
-Эта backend архитектура:
-
-- Простая в реализации (HTTP + очереди).
-- Устойчиво масштабируется по нагрузке.
-- Изолирует сложность AI‑пайплайна в Orchestrator и LLM Service.
-- Обеспечивает безопасную обработку запросов (OWASP LLM Top‑10).
-- Легко расширяется за счёт отдельного ingestion и retrieval слоёв.
+## 8. Следующие шаги
+- Расширить observability (добавить tracing exporter).
+- Настроить полноценный Vector DB и storage для ingestion.
+- Подключить внешние интеграции (чат-боты, порталы).
+- Расширить набор MCP инструментов и safety-политик.

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+import tempfile
+from pathlib import Path
 from datetime import datetime
 from typing import Dict
 
@@ -12,7 +14,10 @@ class InMemoryQueue:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.tickets: Dict[str, IngestionTicket] = {}
-        self.storage_path = settings.storage_path
+        if settings.mock_mode:
+            self.storage_path = Path(tempfile.gettempdir()) / "visior_ingestion_storage"
+        else:
+            self.storage_path = settings.storage_path
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
     def enqueue(self, doc_name: str, tenant_id: str, content: bytes) -> IngestionTicket:

@@ -1,6 +1,6 @@
-# Technical Specification (TZ)
-## Microservice: **AI Orchestrator**
-### Project: Orion Soft Internal AI Assistant — *Visior*
+# Техническая спецификация (ТЗ)
+## Микросервис: **AI Orchestrator**
+### Проект: Orion Soft Internal AI Assistant — *Visior*
 
 ---
 
