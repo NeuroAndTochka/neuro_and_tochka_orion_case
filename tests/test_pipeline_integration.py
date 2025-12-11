@@ -1,5 +1,4 @@
 import importlib
-import os
 import pathlib
 import sys
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -64,7 +63,6 @@ async def test_api_gateway_pipeline_end_to_end():
     retrieval_app = load_app("retrieval_service.main", retrieval_config)
     mcp_app = load_app("mcp_tools_proxy.main", mcp_config)
     llm_app = load_app("llm_service.main", llm_config)
-    orchestrator_app = load_app("ai_orchestrator.main", orch_config)
     gateway_app = load_app("api_gateway.main", gateway_config)
 
     async with AsyncExitStack() as stack:

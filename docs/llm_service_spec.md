@@ -1,5 +1,5 @@
-# Technical Specification (TZ)  
-## Microservice: **LLM Service (RAG + MCP Orchestration Layer)**  
+# Technical Specification (TZ)
+## Microservice: **LLM Service (RAG + MCP Orchestration Layer)**
 ### Project: Orion Soft Internal AI Assistant — *Visior*
 
 ---
@@ -8,12 +8,12 @@
 
 **LLM Service** — микросервис, выполняющий:
 
-- низкоуровневое взаимодействие с моделью (local vLLM / remote OpenAI-compatible server),  
-- построение RAG-инференса на основе контекста,  
-- обработку tool-calls (MCP) от модели,  
-- управление шагами генерации (multi-turn tool reasoning),  
-- предоставление согласованного интерфейса для AI Orchestrator,  
-- формирование структурированного ответа (answer, tokens, tool trace).  
+- низкоуровневое взаимодействие с моделью (local vLLM / remote OpenAI-compatible server),
+- построение RAG-инференса на основе контекста,
+- обработку tool-calls (MCP) от модели,
+- управление шагами генерации (multi-turn tool reasoning),
+- предоставление согласованного интерфейса для AI Orchestrator,
+- формирование структурированного ответа (answer, tokens, tool trace).
 
 LLM Service скрывает сложность взаимодействия с моделью, обеспечивая безопасный, контролируемый и воспроизводимый способ генерации.
 
@@ -34,45 +34,45 @@ LLM Service скрывает сложность взаимодействия с 
 
 ## 2.1 Входит в ответственность
 
-1. **Inference** — запуск модели LLM:  
-   - chat completion,  
-   - rag-mode completion,  
-   - deterministic / temperature-controlled generation.  
+1. **Inference** — запуск модели LLM:
+   - chat completion,
+   - rag-mode completion,
+   - deterministic / temperature-controlled generation.
 
-2. **RAG Integration** — включение context_chunks:  
-   - добавление в prompt,  
-   - токенизация и подсчёт бюджета,  
-   - trimming / merging чанков при необходимости.  
+2. **RAG Integration** — включение context_chunks:
+   - добавление в prompt,
+   - токенизация и подсчёт бюджета,
+   - trimming / merging чанков при необходимости.
 
-3. **MCP Tool Orchestration** — управляет тем, как LLM вызывает инструменты:  
-   - принимает tool-call от модели,  
-   - вызывает **MCP Tools Proxy**,  
-   - подаёт результат обратно в модель как очередное сообщение,  
-   - поддерживает циклическое выполнение до лимита шагов.  
+3. **MCP Tool Orchestration** — управляет тем, как LLM вызывает инструменты:
+   - принимает tool-call от модели,
+   - вызывает **MCP Tools Proxy**,
+   - подаёт результат обратно в модель как очередное сообщение,
+   - поддерживает циклическое выполнение до лимита шагов.
 
-4. **Prompt Assembly** — формирование:  
-   - system_prompt,  
-   - user/assistant/previous messages,  
-   - retrieval context block,  
-   - специального MCP instructions блока.  
+4. **Prompt Assembly** — формирование:
+   - system_prompt,
+   - user/assistant/previous messages,
+   - retrieval context block,
+   - специального MCP instructions блока.
 
-5. **Token & Time Control**  
-   - token-limit enforcement,  
-   - watchdog timeout (ограничение времени генерации),  
-   - попытки повторной генерации (retry).  
+5. **Token & Time Control**
+   - token-limit enforcement,
+   - watchdog timeout (ограничение времени генерации),
+   - попытки повторной генерации (retry).
 
-6. **Model Safety Guardrails (internal)**  
-   - защита от runaway loops,  
-   - ограничение количества tool-calls,  
-   - контроль размера промежуточных ответов.  
+6. **Model Safety Guardrails (internal)**
+   - защита от runaway loops,
+   - ограничение количества tool-calls,
+   - контроль размера промежуточных ответов.
 
 ## 2.2 Не входит в ответственность
 
-- safety-фильтрация (это Safety Service),  
-- retrieval (это Retrieval Service),  
-- хранение документов,  
-- управление пользователями и авторизацией,  
-- долгосрочное хранение истории диалогов.  
+- safety-фильтрация (это Safety Service),
+- retrieval (это Retrieval Service),
+- хранение документов,
+- управление пользователями и авторизацией,
+- долгосрочное хранение истории диалогов.
 
 ---
 
@@ -89,7 +89,7 @@ LLM Service
    └─ Safety-internal protections (loop/overuse guards)
 ```
 
-LLM Service — stateless.   
+LLM Service — stateless.
 Оркестрация multi-step reasoning осуществляется внутри сервиса или при поддержке vLLM/OpenAI-compatible JSON-mode.
 
 ---
@@ -194,13 +194,13 @@ LLM Service управляет циклом reasoning:
 
 ### Алгоритм:
 
-1. Вызвать модель с текущими сообщениями.  
-2. Если модель отвечает обычным текстом → завершить.  
-3. Если модель генерирует MCP tool-call JSON →  
-   - валидировать структуру,  
-   - вызвать MCP Tools Proxy,  
-   - добавить ответ MCP как `assistant` message,  
-   - продолжить генерацию (переход к шагу 1).  
+1. Вызвать модель с текущими сообщениями.
+2. Если модель отвечает обычным текстом → завершить.
+3. Если модель генерирует MCP tool-call JSON →
+   - валидировать структуру,
+   - вызвать MCP Tools Proxy,
+   - добавить ответ MCP как `assistant` message,
+   - продолжить генерацию (переход к шагу 1).
 4. Остановиться по одному из условий:
    - модель вернула финальный текст,
    - превышено количество tool-calls,
@@ -228,9 +228,9 @@ LLM generates final answer.
 
 LLM Service должен:
 
-- оценивать токенизацию входящих сообщений,  
-- корректировать контекст (если слишком большое),  
-- следить за cumulative tokens (включая tool-calls),  
+- оценивать токенизацию входящих сообщений,
+- корректировать контекст (если слишком большое),
+- следить за cumulative tokens (включая tool-calls),
 - останавливать reasoning при превышении лимитов.
 
 Типичные ограничения:
@@ -277,8 +277,8 @@ LLM Service должен поддерживать:
 
 ## 9.1 Ошибки модели
 
-- timeout (превышено время генерации),  
-- model overloaded,  
+- timeout (превышено время генерации),
+- model overloaded,
 - токенизация не удалась.
 
 Ответ:
@@ -331,36 +331,36 @@ assistant:
 
 Цель (p95):
 
-- latency одного вызова модели: ≤ 400–800 ms (в зависимости от модели),  
-- весь MCP sequence ≤ 2–3 секунд,  
+- latency одного вызова модели: ≤ 400–800 ms (в зависимости от модели),
+- весь MCP sequence ≤ 2–3 секунд,
 - overhead LLM Service ≤ 30 ms.
 
 ## 10.2 Scalability
 
-- Stateless, горизонтальное масштабирование,  
-- Поддержка batch/token caching (опционально для vLLM).  
+- Stateless, горизонтальное масштабирование,
+- Поддержка batch/token caching (опционально для vLLM).
 
 ## 10.3 Reliability
 
-- retries = 1 при transient errors,  
-- circuit breaker к LLM runtime,  
+- retries = 1 при transient errors,
+- circuit breaker к LLM runtime,
 - health-check endpoint.
 
 ## 10.4 Observability
 
 Метрики:
 
-- `llm_requests_total`,  
-- `llm_latency_ms`,  
-- `llm_tool_call_count`,  
-- `llm_token_usage`,  
-- `llm_mcp_errors_total`.  
+- `llm_requests_total`,
+- `llm_latency_ms`,
+- `llm_tool_call_count`,
+- `llm_token_usage`,
+- `llm_mcp_errors_total`.
 
 Логи:
 
-- model_name,  
-- количество tool steps,  
-- latency per step,  
+- model_name,
+- количество tool steps,
+- latency per step,
 - trace_id.
 
 ---
@@ -369,14 +369,14 @@ assistant:
 
 ## ENV
 
-- `LLM_RUNTIME_URL`  
-- `DEFAULT_MODEL_NAME`  
-- `MAX_TOOL_STEPS`  
-- `MAX_PROMPT_TOKENS`  
-- `MAX_COMPLETION_TOKENS`  
-- `ENABLE_JSON_MODE`  
-- `MCP_PROXY_URL`  
-- `LOG_LEVEL`  
+- `LLM_RUNTIME_URL`
+- `DEFAULT_MODEL_NAME`
+- `MAX_TOOL_STEPS`
+- `MAX_PROMPT_TOKENS`
+- `MAX_COMPLETION_TOKENS`
+- `ENABLE_JSON_MODE`
+- `MCP_PROXY_URL`
+- `LOG_LEVEL`
 
 ---
 
@@ -384,28 +384,28 @@ assistant:
 
 ## Unit tests:
 
-- prompt builder,  
-- MCP call parsing,  
-- token budget logic.  
+- prompt builder,
+- MCP call parsing,
+- token budget logic.
 
 ## Integration tests:
 
-- LLM runtime mock,  
-- MCP Proxy mock,  
-- multi-step chain validations.  
+- LLM runtime mock,
+- MCP Proxy mock,
+- multi-step chain validations.
 
 ## E2E tests:
 
-- full RAG → LLM → MCP → completion pipeline.  
+- full RAG → LLM → MCP → completion pipeline.
 
 ---
 
 # 13. Открытые вопросы
 
-1. Нужен ли streaming-режим в MVP?  
-2. Следует ли позволять модели самостоятельно делать sub-retrieval (доступ к Retrieval Service)?  
-3. Поддерживать ли разные типы моделей (encoder-decoder, chat, function-calling)?  
-4. Хранить ли промежуточные tool-call traces для последующей аналитики?  
+1. Нужен ли streaming-режим в MVP?
+2. Следует ли позволять модели самостоятельно делать sub-retrieval (доступ к Retrieval Service)?
+3. Поддерживать ли разные типы моделей (encoder-decoder, chat, function-calling)?
+4. Хранить ли промежуточные tool-call traces для последующей аналитики?
 
 ---
 

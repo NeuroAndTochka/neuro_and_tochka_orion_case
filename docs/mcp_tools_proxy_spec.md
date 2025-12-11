@@ -1,5 +1,5 @@
-# Technical Specification (TZ)  
-## Microservice: **MCP Tools Proxy**  
+# Technical Specification (TZ)
+## Microservice: **MCP Tools Proxy**
 ### Project: Orion Soft Internal AI Assistant — *Visior*
 
 ---
@@ -81,7 +81,7 @@
 # 3. Архитектура (High-level)
 
 ```text
-LLM Service 
+LLM Service
    ↕ (MCP tool-calls)
 MCP Tools Proxy
    ├─ Metadata DB
@@ -284,15 +284,15 @@ LLM → LLM Service → MCP Tools Proxy → internal resources → proxy → LLM
 
 Шаги:
 
-1. LLM Service получает tool-call.  
-2. Делегирует вызов в MCP Tools Proxy.  
+1. LLM Service получает tool-call.
+2. Делегирует вызов в MCP Tools Proxy.
 3. MCP Tools Proxy:
    - валидирует права,
    - исполняет запрос,
    - применяет ограничения,
-   - собирает нормализованный ответ.  
-4. Возврат результата в LLM Service.  
-5. LLM продолжает генерацию.  
+   - собирает нормализованный ответ.
+4. Возврат результата в LLM Service.
+5. LLM продолжает генерацию.
 
 ---
 
@@ -412,10 +412,10 @@ code: RATE_LIMIT_EXCEEDED
 
 # 12. Открытые вопросы
 
-1. Нужно ли поддерживать streaming результатов?  
-2. Должны ли инструменты позволять LLM читать изображения/таблицы?  
-3. Нужен ли инструмент "semantic search inside doc" через embeddings, или достаточно BM25?  
-4. Следует ли LLM иметь tool для вызова Retrieval Service напрямую?  
+1. Нужно ли поддерживать streaming результатов?
+2. Должны ли инструменты позволять LLM читать изображения/таблицы?
+3. Нужен ли инструмент "semantic search inside doc" через embeddings, или достаточно BM25?
+4. Следует ли LLM иметь tool для вызова Retrieval Service напрямую?
 
 ---
 

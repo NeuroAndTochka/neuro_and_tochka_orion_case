@@ -63,4 +63,3 @@
 ## Mock требования
 - Любой новый ключ в response должен иметь default в mock payload, иначе API Gateway может упасть при сериализации.
 - Для unit-тестов (например `services/ai_orchestrator/tests/test_respond.py`) используйте `Settings(mock_mode=True)` и кастомные httpx mock-транспорты, чтобы зафиксировать контракт.
-

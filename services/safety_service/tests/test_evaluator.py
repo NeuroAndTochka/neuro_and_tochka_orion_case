@@ -1,6 +1,6 @@
 from safety_service.config import Settings
 from safety_service.core.evaluator import evaluate_input, evaluate_output
-from safety_service.schemas import InputCheckRequest, OutputCheckRequest, SafetyMeta, SafetyUser
+from safety_service.schemas import InputCheckRequest, OutputCheckRequest, SafetyUser
 
 
 def build_settings(**kw) -> Settings:

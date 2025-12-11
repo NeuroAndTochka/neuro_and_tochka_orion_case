@@ -1,5 +1,3 @@
-from typing import Dict
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 
 from ingestion_service.core.storage import InMemoryQueue

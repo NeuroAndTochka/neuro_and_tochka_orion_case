@@ -51,4 +51,3 @@ Body:
 ## Mock требования
 - В mock режиме очередь должна поддерживать полный цикл `queued -> processing -> done/failed`.
 - Любое новое поле в ответе (например `estimated_time_ms`) добавляйте в mock `Ticket` и `tests/test_ingestion.py`.
-

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Dict
 
 from ingestion_service.config import Settings

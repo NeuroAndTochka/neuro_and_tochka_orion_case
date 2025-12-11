@@ -540,4 +540,3 @@ Response:
 - Part 1 (Public API): фронт ↔ backend через /api/v1/...
 - Part 2 (Internal API): контракты между AI Orchestrator, Safety, Retrieval, LLM и Ingestion.
 - Async модель: ingestion и события через брокер сообщений.
-

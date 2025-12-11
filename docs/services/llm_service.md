@@ -77,4 +77,3 @@ LLM Service инкапсулирует работу с LLM runtime и MCP-инс
 ## Mock требования
 - Mock payload должен включать корректные структуры `used_tokens`, `tools_called`, `meta`.
 - Если вы добавляете дополнительное поле в ответ (например, `confidence`), сразу добавьте значение в mock (`LLMRuntimeClient._mock_response`) и тесты.
-

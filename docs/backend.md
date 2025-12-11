@@ -1,4 +1,4 @@
-# Backend Architecture Documentation  
+# Backend Architecture Documentation
 ## Orion Soft Internal AI Assistant
 
 ---
@@ -55,7 +55,7 @@
 - Роутинг upload‑запросов в очередь ingestion.
 - Генерация trace_id и логирование.
 
-**Not responsible for:**  
+**Not responsible for:**
 LLM, RAG, VectorDB.
 
 ---
@@ -148,21 +148,21 @@ LLM, RAG, VectorDB.
 
 ### 4.1 Vector DB Structure
 - `doc_index`:
-  - doc_id  
-  - doc_embedding  
-  - metadata  
+  - doc_id
+  - doc_embedding
+  - metadata
 - `section_index`:
-  - section_id  
-  - summary  
-  - summary_embedding  
-  - doc_id  
+  - section_id
+  - summary
+  - summary_embedding
+  - doc_id
 - `chunk_index`:
-  - chunk_id  
-  - chunk_text  
-  - chunk_embedding  
-  - doc_id, section_id  
-  - token_count  
-  - page ranges / offsets for MCP  
+  - chunk_id
+  - chunk_text
+  - chunk_embedding
+  - doc_id, section_id
+  - token_count
+  - page ranges / offsets for MCP
 
 ---
 
@@ -170,35 +170,35 @@ LLM, RAG, VectorDB.
 Entities:
 
 **documents**
-- doc_id  
-- name  
-- source  
-- tags  
-- file_path  
-- product / version  
-- status (`uploaded`, `processing`, `indexed`, `failed`)  
-- timestamps  
+- doc_id
+- name
+- source
+- tags
+- file_path
+- product / version
+- status (`uploaded`, `processing`, `indexed`, `failed`)
+- timestamps
 
 **sections**
-- section_id  
-- doc_id  
-- title  
-- pages  
-- summary  
+- section_id
+- doc_id
+- title
+- pages
+- summary
 
 **chunks**
-- chunk_id  
-- doc_id  
-- section_id  
-- text  
-- tokens  
-- page ranges  
+- chunk_id
+- doc_id
+- section_id
+- text
+- tokens
+- page ranges
 
 **ingestion_jobs**
-- job_id  
-- doc_id  
-- status  
-- error_log  
+- job_id
+- doc_id
+- status
+- error_log
 
 ---
 
@@ -257,25 +257,25 @@ Minimal guarantees:
 
 ### 7.1 User Query Flow
 
-1. UI → API Gateway  
-2. API Gateway → Safety Input Guard  
-3. API Gateway → AI Orchestrator  
-4. Orchestrator → Retrieval Service → Vector DB  
-5. Orchestrator → LLM Service (RAG)  
-6. LLM Service ↔ MCP (опциональные tool‑calls)  
-7. LLM Service → Orchestrator  
-8. Orchestrator → Safety Output Guard  
-9. Orchestrator → API Gateway → UI  
+1. UI → API Gateway
+2. API Gateway → Safety Input Guard
+3. API Gateway → AI Orchestrator
+4. Orchestrator → Retrieval Service → Vector DB
+5. Orchestrator → LLM Service (RAG)
+6. LLM Service ↔ MCP (опциональные tool‑calls)
+7. LLM Service → Orchestrator
+8. Orchestrator → Safety Output Guard
+9. Orchestrator → API Gateway → UI
 
 ---
 
 ### 7.2 Document Ingestion Flow
 
-1. UI → API Gateway → enqueue `documents_to_ingest`  
-2. Ingestion Service consumes task  
-3. Parses → chunks → summaries → embeddings  
-4. Writes to Vector DB / Metadata DB  
-5. Updates status (`indexed`)  
+1. UI → API Gateway → enqueue `documents_to_ingest`
+2. Ingestion Service consumes task
+3. Parses → chunks → summaries → embeddings
+4. Writes to Vector DB / Metadata DB
+5. Updates status (`indexed`)
 
 ---
 
@@ -288,4 +288,3 @@ Minimal guarantees:
 - Изолирует сложность AI‑пайплайна в Orchestrator и LLM Service.
 - Обеспечивает безопасную обработку запросов (OWASP LLM Top‑10).
 - Легко расширяется за счёт отдельного ingestion и retrieval слоёв.
-

@@ -1,12 +1,6 @@
-import pathlib
-import sys
-
 import httpx
 import pytest
 from fastapi import FastAPI
-
-ROOT = pathlib.Path(__file__).resolve().parents[2]
-sys.path.append(str(ROOT / "mcp_tools_proxy"))
 
 from llm_service.config import Settings
 from llm_service.core.orchestrator import LLMOrchestrator

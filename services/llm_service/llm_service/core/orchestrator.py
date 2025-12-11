@@ -32,7 +32,7 @@ class LLMOrchestrator:
         usage = UsageStats()
         tool_state = ToolState()
 
-        for step in range(self.settings.max_tool_steps + 1):
+        for _ in range(self.settings.max_tool_steps + 1):
             payload = self._build_runtime_payload(messages, context_payload, request)
             result = await self.runtime.chat_completion(payload)
             usage.prompt += result.usage.get("prompt_tokens", 0)
@@ -73,7 +73,12 @@ class LLMOrchestrator:
 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"code": "LLM_LOOP", "message": "No final answer"})
 
-    def _build_runtime_payload(self, messages: List[Dict[str, str]], context_payload: List[Dict[str, Any]], request: GenerateRequest) -> Dict[str, Any]:
+    def _build_runtime_payload(
+        self,
+        messages: List[Dict[str, str]],
+        context_payload: List[Dict[str, Any]],
+        request: GenerateRequest,
+    ) -> Dict[str, Any]:
         params = request.generation_params
         payload = {
             "model": self.settings.default_model,

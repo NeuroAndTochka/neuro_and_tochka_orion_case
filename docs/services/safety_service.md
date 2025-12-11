@@ -59,4 +59,3 @@ Safety Service реализует input guard и output guard, применяя 
 ## Моки
 - Все клиенты должны уважать возможные статусы: `allowed`, `transformed`, `blocked`, `monitor` (добавьте при появлении).
 - В mock-режиме сервис может отвечать статически, но поля `status/reason/policy_id/trace_id` обязательны. При изменении формата необходимо синхронное обновление `api_gateway.clients.safety` и `ai_orchestrator.clients.safety`.
-
