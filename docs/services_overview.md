@@ -77,17 +77,19 @@
 
 ## Document Service
 
-**Назначение.** Отвечает за чтение метаданных документов, секций и обновление статусов после обработки. Сейчас используется in‑memory репозиторий, интерфейс максимально приближен к прод API.
+**Назначение.** Production-ready сервис метаданных. Хранит документы/секции/теги в PostgreSQL, выдаёт download URL через S3/MinIO, принимает статусы от ingestion. Tenant isolation enforced (`X-Tenant-ID`).
 
 **API.**
-- `GET /internal/documents` — параметры фильтрации (`status`, `product`, `tag`, `search`), обязателен заголовок `X-Tenant-ID`.
-- `GET /internal/documents/{doc_id}` — детальная карточка документа.
-- `GET /internal/documents/{doc_id}/sections/{section_id}` — содержимое секции.
-- `POST /internal/documents/status` — обновление статуса обработки (`StatusUpdateRequest`), используется ingestion pipeline.
+- `POST /internal/documents` — создание/обновление метаданных (поддерживает storage_uri, страницы, теги).
+- `GET /internal/documents` — фильтры `status|product|tag|search`, пагинация через `limit/offset`.
+- `GET /internal/documents/{doc_id}` и `/sections/{section_id}` — детальные данные, секции с chunk_ids.
+- `POST /internal/documents/{doc_id}/sections` — upsert секций ingestion пайплайном.
+- `POST /internal/documents/status` — обновление статуса/ошибок/страниц.
+- `GET /internal/documents/{doc_id}/download-url` — выдача S3 pre-signed или локальной ссылки.
 
-**Настройки.** `DOC_*`: mock_mode, реквизиты БД/кэша (пока заглушки).
+**Настройки.** `DOC_DB_DSN`, `DOC_S3_*`, `DOC_LOCAL_STORAGE_PATH`, `DOC_MOCK_MODE`. При `mock_mode=false` сервис проверяет, что подключен PostgreSQL и настроено S3. Конфиг описан в `services/document_service/README.md`.
 
-**Расширение.** План интеграции с реальной БД: реализовать репозиторий в `core/repository.py` (или заменить InMemory). Не забываем о мульти‑тенантной изоляции (`X-Tenant-ID`). Тесты — `services/document_service/tests/test_documents.py`.
+**Расширение.** Новые поля добавляем в SQLAlchemy модели + схемы, обновляем тесты `services/document_service/tests/test_documents.py`. Для интеграции с кешами/аудитом расширяем `core/repository.py` и middleware, сохраняя контракт API.
 
 ## Ingestion Service
 
@@ -111,6 +113,20 @@
 **Настройки.** `RETR_*`: `max_results`, mock_mode.
 
 **Расширение.** При подключении реальной векторной БД реализуем адаптер в `core/index.py`. Не изменяем форму `RetrievalResponse`, чтобы не нарушить контракты с оркестратором. Покрытие тестами — `services/retrieval_service/tests`.
+
+## ML Observer Service
+
+**Назначение.** Служебный playground для ML/IR команды. Позволяет загружать тестовые документы, тюнинговать параметры retrieval/rerank, запускать эксперименты и смотреть метрики пайплайна без влияния на прод.
+
+**API.**
+- `POST /internal/observer/documents/upload` — прогон загрузки через ingestion/doc сервисы внутри специального tenant.
+- `POST /internal/observer/retrieval/run` — выполнение поисковых запросов с произвольными параметрами и сбором метрик.
+- `POST /internal/observer/experiments` / `GET .../results` — управление экспериментами, хранение результатов в собственной БД.
+- `POST /internal/observer/llm/dry-run` — тестовые вызовы LLM Service на выбранном контексте.
+
+**Настройки.** `OBS_*`: DSN PostgreSQL, MinIO еndpoint/bucket, base URL внутренних сервисов, разрешённый tenant, service token. Для локальной разработки доступен fallback на SQLite + локальную папку.
+
+**Особенности.** Сервис обращается к остальным компонентам только через их публичное API и использует отдельный tenant (`observer_tenant`). Все действия логируются для аудита. Документация — `docs/services/ml_observer.md`.
 
 ## Интеграционные соглашения
 
