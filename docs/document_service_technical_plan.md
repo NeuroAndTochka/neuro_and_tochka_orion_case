@@ -121,6 +121,7 @@ API Gateway / Retrieval / MCP → Document Service → PostgreSQL (metadata)
   5. `POST /internal/documents/status` — обновление статуса, страниц, ссылок хранения (используется ingestion/ai orchestrator).
   6. `GET /internal/documents/{doc_id}/download-url` — генерация URL (локальный `file://` или S3 pre-signed).
 - **Тесты** `services/document_service/tests/test_documents.py` покрывают все эндпойнты: создание, листинг, detail, секции, статус, генерацию ссылок и проверку tenant isolation. Тесты используют SQLite и локальное хранилище, автоматически чистят временные файлы.
+- **Интеграционные тесты** `services/document_service/tests/test_postgres_repository.py` запускают Testcontainers (PostgreSQL, образ задаётся `DOC_TEST_POSTGRES_IMAGE`, по умолчанию `postgres:16`) и прогоняют CRUD-цикл репозитория против реальной БД. Требуется Docker и новый dev-dependency `testcontainers`. Альтернатива — задать `DOC_TEST_POSTGRES_DSN`, чтобы тесты использовали подготовленный Postgres (например, в GitHub Actions или локальном Docker Compose).
 - **Интеграция с CI**: `pre-commit` и `flake8` проходят, тесты `pytest services/document_service/tests/test_documents.py` зелёные.
 
 Следующие шаги: добавить Alembic-мода, интеграционные тесты с Postgres+MinIO (testcontainers), аудит и кеширование, а также документацию OpenAPI для фронта.

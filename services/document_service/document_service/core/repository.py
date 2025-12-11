@@ -155,8 +155,7 @@ class DocumentRepository:
             section.summary = data.summary
             section.storage_path = data.storage_path
         await self.session.commit()
-        await self.session.refresh(document)
-        return self._to_detail(document)
+        return await self.get_document(doc_id, tenant_id)
 
     async def _replace_tags(self, document: models.Document, tags: Iterable[str]) -> None:
         new_tags = {tag for tag in tags}

@@ -53,6 +53,27 @@ cd services/document_service
 ```
 Тесты используют TestClient, SQLite и временную директорию в `tests/local_storage`. Перед запуском убеждайтесь, что активирован `DOC_MOCK_MODE=true` (значение задаётся в тесте автоматически).
 
+### Интеграционные тесты c PostgreSQL (Testcontainers)
+Для проверки работы с реальной БД запустите:
+```bash
+cd services/document_service
+pytest tests/test_postgres_repository.py
+```
+Понадобится установленный Docker (используется `testcontainers.postgres`). Тест поднимет PostgreSQL (образ по умолчанию `postgres:16`, можно переопределить через `DOC_TEST_POSTGRES_IMAGE`), создаст таблицы и выполнит полный CRUD-цикл репозитория. Первый запуск может занять 1–2 минуты, если образ ещё не загружен (`docker pull postgres:16` ускорит процесс).
+
+Если Docker недоступен (например, на корпоративном ноутбуке), можно указать собственный DSN:
+
+```bash
+export DOC_TEST_POSTGRES_DSN="postgresql+asyncpg://user:pass@localhost:5432/doc_service_test"
+pytest tests/test_postgres_repository.py
+
+# опционально задать используемый образ
+export DOC_TEST_POSTGRES_IMAGE="postgres:16-alpine"
+pytest tests/test_postgres_repository.py
+```
+
+В этом режиме контейнер не стартует, а тесты используют указанную БД (после каждого прогона таблицы пересоздаются). Значение переменной можно задать и в GitHub Actions, если нужно использовать подготовленный Postgres сервис.
+
 ## Docker
 ```bash
 cd services/document_service
