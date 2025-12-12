@@ -117,6 +117,20 @@ services:
     networks:
       - visior
 
+  ml_observer:
+    build:
+      context: ./services/ml_observer
+    container_name: ml_observer
+    environment:
+      OBS_HOST: 0.0.0.0
+      OBS_PORT: "8085"
+      OBS_LOG_LEVEL: info
+      OBS_MOCK_MODE: "true"
+    ports:
+      - "8085:8085"
+    networks:
+      - visior
+
 networks:
   visior:
     driver: bridge
