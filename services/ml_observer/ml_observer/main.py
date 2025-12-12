@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from ml_observer.config import Settings, get_settings
 from ml_observer.db import create_engine, create_session_factory, init_db
 from ml_observer.logging import configure_logging, get_logger
-from ml_observer.routers import observer
+from ml_observer.routers import observer, ui
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.include_router(observer.router)
+app.include_router(ui.router)
 
 
 @app.get("/health", tags=["health"])
