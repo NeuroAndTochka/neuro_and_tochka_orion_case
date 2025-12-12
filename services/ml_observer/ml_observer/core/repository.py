@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,13 @@ class ObserverRepository:
         self.session = session
 
     async def create_experiment(
-        self, *, experiment_id: str, tenant_id: str, name: str, description: str | None, params: dict
+        self,
+        *,
+        experiment_id: str,
+        tenant_id: str,
+        name: str,
+        description: str | None,
+        params: dict,
     ) -> ExperimentDetail:
         experiment = models.Experiment(
             id=experiment_id,
@@ -35,10 +41,15 @@ class ObserverRepository:
         await self.session.refresh(experiment)
         return await self.get_experiment(experiment.id, tenant_id)  # type: ignore[return-value]
 
-    async def get_experiment(self, experiment_id: str, tenant_id: str) -> Optional[ExperimentDetail]:
+    async def get_experiment(
+        self, experiment_id: str, tenant_id: str
+    ) -> Optional[ExperimentDetail]:
         stmt = (
             select(models.Experiment)
-            .where(models.Experiment.id == experiment_id, models.Experiment.tenant_id == tenant_id)
+            .where(
+                models.Experiment.id == experiment_id,
+                models.Experiment.tenant_id == tenant_id,
+            )
             .options(selectinload(models.Experiment.runs))
         )
         experiment = (await self.session.scalars(stmt)).first()
@@ -140,7 +151,9 @@ class ObserverRepository:
             meta=document.meta or {},
         )
 
-    async def get_document(self, tenant_id: str, doc_id: str) -> Optional[DocumentStatus]:
+    async def get_document(
+        self, tenant_id: str, doc_id: str
+    ) -> Optional[DocumentStatus]:
         stmt = select(models.ObservedDocument).where(
             models.ObservedDocument.tenant_id == tenant_id,
             models.ObservedDocument.doc_id == doc_id,
@@ -157,7 +170,9 @@ class ObserverRepository:
         )
 
     @staticmethod
-    def build_mock_hits(queries: Sequence[str], top_k: int) -> Tuple[list[RetrievalHit], dict]:
+    def build_mock_hits(
+        queries: Sequence[str], top_k: int
+    ) -> Tuple[list[RetrievalHit], dict]:
         hits: list[RetrievalHit] = []
         for idx in range(min(top_k, 5)):
             hits.append(
@@ -166,7 +181,9 @@ class ObserverRepository:
                     section_id=f"sec_{idx}",
                     score=max(0.1, 1.0 - idx * 0.1),
                     chunk_id=f"chunk_{idx}",
-                    snippet=f"Mock result for: {queries[0]}" if queries else "Mock result",
+                    snippet=(
+                        f"Mock result for: {queries[0]}" if queries else "Mock result"
+                    ),
                 )
             )
         metrics = {"top_k": top_k, "query_count": len(queries)}
