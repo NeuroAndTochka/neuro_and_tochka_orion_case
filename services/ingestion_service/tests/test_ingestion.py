@@ -25,6 +25,7 @@ def test_enqueue_document(tmp_path, monkeypatch):
         data = resp.json()
         assert data["status"] == "queued"
         assert data["storage_uri"]
+        assert data["tenant_id"] == "tenant_1"
 
 
 def test_update_status():

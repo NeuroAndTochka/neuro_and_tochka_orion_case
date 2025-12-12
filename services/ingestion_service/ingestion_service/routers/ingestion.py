@@ -1,17 +1,21 @@
 import uuid
+from datetime import datetime
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 
 from ingestion_service.config import Settings
-from ingestion_service.core.jobs import InMemoryJobStore
+from ingestion_service.core.jobs import JobRecord, JobStore
+from ingestion_service.core.pipeline import process_file
 from ingestion_service.core.storage import StorageClient
+from ingestion_service.core.embedding import EmbeddingClient
+from ingestion_service.core.vector_store import VectorStore
 from ingestion_service.schemas import EnqueueResponse, StatusPayload
 
 router = APIRouter(prefix="/internal/ingestion", tags=["ingestion"])
 
 
-def get_jobs(request: Request) -> InMemoryJobStore:
+def get_jobs(request: Request) -> JobStore:
     jobs = getattr(request.app.state, "jobs", None)
     if jobs is None:
         raise RuntimeError("Job store is not initialized")
@@ -32,6 +36,20 @@ def get_settings(request: Request) -> Settings:
     return settings
 
 
+def get_embedding_client(request: Request) -> EmbeddingClient:
+    client = getattr(request.app.state, "embedding_client", None)
+    if client is None:
+        raise RuntimeError("Embedding client is not configured")
+    return client
+
+
+def get_vector_store(request: Request) -> VectorStore:
+    store = getattr(request.app.state, "vector_store", None)
+    if store is None:
+        raise RuntimeError("Vector store is not configured")
+    return store
+
+
 def get_tenant_id(request: Request) -> str:
     tenant_id = request.headers.get("X-Tenant-ID")
     if not tenant_id:
@@ -45,16 +63,29 @@ async def enqueue_document(
     product: str | None = Form(None),
     version: str | None = Form(None),
     tags: str | None = Form(None),
-    jobs: InMemoryJobStore = Depends(get_jobs),
+    jobs: JobStore = Depends(get_jobs),
     storage: StorageClient = Depends(get_storage),
     settings: Settings = Depends(get_settings),
+    embedding: EmbeddingClient = Depends(get_embedding_client),
+    vector_store: VectorStore = Depends(get_vector_store),
     tenant_id: str = Depends(get_tenant_id),
+    background: BackgroundTasks = None,
 ) -> EnqueueResponse:
     content = await file.read()
     doc_id = f"doc_{uuid.uuid4().hex[:8]}"
     storage_uri = storage.upload(tenant_id, file.filename, content)
-    ticket = jobs.create_job(doc_id)
-    ticket.storage_uri = storage_uri
+    job_id = f"job_{uuid.uuid4().hex[:12]}"
+    ticket = jobs.create(
+        JobRecord(
+            job_id=job_id,
+            tenant_id=tenant_id,
+            doc_id=doc_id,
+            status="queued",
+            submitted_at=datetime.utcnow(),
+            storage_uri=storage_uri,
+            error=None,
+        )
+    )
 
     # опциональная регистрация документа в Document Service
     if settings.doc_service_base_url:
@@ -77,8 +108,23 @@ async def enqueue_document(
             # Логируем, но не падаем
             pass
 
+    if background is not None:
+        background.add_task(
+            process_file,
+            ticket=ticket,
+            storage=storage,
+            embedding=embedding,
+            jobs=jobs,
+            doc_service_base_url=settings.doc_service_base_url,
+            max_pages=settings.max_pages,
+            max_file_mb=settings.max_file_mb,
+            chunk_size=settings.chunk_size,
+            vector_store=vector_store,
+        )
+
     return EnqueueResponse(
         job_id=ticket.job_id,
+        tenant_id=ticket.tenant_id,
         doc_id=ticket.doc_id,
         status=ticket.status,
         storage_uri=storage_uri,
@@ -88,7 +134,7 @@ async def enqueue_document(
 @router.post("/status", response_model=EnqueueResponse)
 async def update_status(
     payload: StatusPayload,
-    jobs: InMemoryJobStore = Depends(get_jobs),
+    jobs: JobStore = Depends(get_jobs),
     settings: Settings = Depends(get_settings),
 ) -> EnqueueResponse:
     try:
@@ -107,12 +153,14 @@ async def update_status(
                         "error": payload.error,
                         "storage_uri": ticket.storage_uri,
                     },
+                    headers={"X-Tenant-ID": ticket.tenant_id},
                 )
         except Exception:
             pass
 
     return EnqueueResponse(
         job_id=ticket.job_id,
+        tenant_id=ticket.tenant_id,
         doc_id=ticket.doc_id,
         status=ticket.status,
         storage_uri=ticket.storage_uri,

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     mock_mode: bool = True
 
     doc_service_base_url: str | None = None
+    redis_url: str | None = "redis://redis:6379/0"
 
     s3_endpoint: str | None = None
     s3_bucket: str | None = None
@@ -24,6 +25,19 @@ class Settings(BaseSettings):
     s3_region: str | None = "us-east-1"
     s3_secure: bool = True
     local_storage_path: Path | None = Path("./.ingestion_storage")
+
+    embedding_api_base: str | None = None  # OpenAI-compatible endpoint
+    embedding_api_key: str | None = None
+    embedding_model: str = "text-embedding-3-small"
+
+    retrieval_base_url: str | None = None
+
+    max_pages: int = 2000
+    max_file_mb: int = 50
+    chunk_size: int = 2048
+    chunk_overlap: int = 200
+
+    chroma_path: Path = Path("./.chroma_ingestion")
 
 
 @lru_cache

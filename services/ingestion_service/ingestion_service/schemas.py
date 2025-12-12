@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 class IngestionTicket(BaseModel):
     job_id: str
+    tenant_id: str
     doc_id: str
     status: str
     submitted_at: datetime
@@ -17,6 +18,7 @@ class IngestionTicket(BaseModel):
 
 class EnqueueResponse(BaseModel):
     job_id: str
+    tenant_id: str
     doc_id: str
     status: str
     storage_uri: str | None = None

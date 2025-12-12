@@ -61,3 +61,29 @@ class StorageClient:
         if parsed.scheme == "local" and self.local_storage_path:
             return (self.local_storage_path / (parsed.netloc + parsed.path).lstrip("/")).resolve()
         return Path(storage_uri.replace("file://", ""))
+
+    def download_bytes(self, storage_uri: str) -> bytes:
+        parsed = urlparse(storage_uri)
+        scheme = parsed.scheme or "file"
+
+        if scheme == "s3":
+            if not self._s3_client:
+                raise RuntimeError("S3 is not configured")
+            bucket = parsed.netloc or self.bucket
+            if not bucket:
+                raise RuntimeError("S3 bucket is not configured")
+            key = parsed.path.lstrip("/")
+            resp = self._s3_client.get_object(Bucket=bucket, Key=key)
+            return resp["Body"].read()
+
+        if scheme == "local":
+            if not self.local_storage_path:
+                raise RuntimeError("Local storage path is not configured")
+            path = (self.local_storage_path / (parsed.netloc + parsed.path).lstrip("/")).resolve()
+            return path.read_bytes()
+
+        if scheme == "file":
+            return Path(parsed.path).read_bytes()
+
+        path = self.resolve_local_path(storage_uri)
+        return path.read_bytes()
