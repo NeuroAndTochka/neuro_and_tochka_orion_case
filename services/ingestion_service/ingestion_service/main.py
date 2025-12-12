@@ -3,7 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from ingestion_service.config import get_settings
-from ingestion_service.core.storage import InMemoryQueue
+from ingestion_service.core.jobs import InMemoryJobStore
+from ingestion_service.core.storage import StorageClient
 from ingestion_service.logging import configure_logging
 from ingestion_service.routers import ingestion
 
@@ -13,7 +14,9 @@ configure_logging(settings.log_level)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.queue = InMemoryQueue(settings)
+    app.state.jobs = InMemoryJobStore()
+    app.state.storage = StorageClient(settings)
+    app.state.settings = settings
     yield
 
 

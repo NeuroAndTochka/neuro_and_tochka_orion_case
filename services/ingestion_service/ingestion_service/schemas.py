@@ -11,17 +11,19 @@ class IngestionTicket(BaseModel):
     doc_id: str
     status: str
     submitted_at: datetime
+    storage_uri: str | None = None
+    error: str | None = None
 
 
 class EnqueueResponse(BaseModel):
     job_id: str
     doc_id: str
     status: str
+    storage_uri: str | None = None
 
 
 class StatusPayload(BaseModel):
     job_id: str
-    doc_id: str
     status: str
     error: Optional[str] = None
     chunk_ids: Optional[List[str]] = None

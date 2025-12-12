@@ -84,6 +84,11 @@ services:
       DOC_PORT: "8060"
       DOC_LOG_LEVEL: info
       DOC_MOCK_MODE: "true"
+      DOC_S3_ENDPOINT: http://minio:9000
+      DOC_S3_BUCKET: visior-documents
+      DOC_S3_ACCESS_KEY: minio
+      DOC_S3_SECRET_KEY: minio123
+      DOC_S3_SECURE: "false"
     ports:
       - "8060:8060"
     networks:
@@ -98,8 +103,17 @@ services:
       INGEST_PORT: "8050"
       INGEST_LOG_LEVEL: info
       INGEST_MOCK_MODE: "true"
+      INGEST_DOC_SERVICE_BASE_URL: http://document_service:8060
+      INGEST_S3_ENDPOINT: http://minio:9000
+      INGEST_S3_BUCKET: visior-documents
+      INGEST_S3_ACCESS_KEY: minio
+      INGEST_S3_SECRET_KEY: minio123
+      INGEST_S3_SECURE: "false"
     ports:
       - "8050:8050"
+    depends_on:
+      - minio
+      - minio-setup
     networks:
       - visior
 
@@ -131,6 +145,45 @@ services:
     networks:
       - visior
 
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - visior
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - visior
+
+  minio-setup:
+    image: minio/mc:latest
+    container_name: minio_setup
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minio minio123 &&
+      mc mb -p local/visior-documents || true
+      "
+    networks:
+      - visior
+
 networks:
   visior:
     driver: bridge
+
+volumes:
+  minio-data:

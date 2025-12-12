@@ -15,6 +15,16 @@ class Settings(BaseSettings):
     storage_path: Path = Path("/var/lib/visior_ingestion_storage")
     mock_mode: bool = True
 
+    doc_service_base_url: str | None = None
+
+    s3_endpoint: str | None = None
+    s3_bucket: str | None = None
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
+    s3_region: str | None = "us-east-1"
+    s3_secure: bool = True
+    local_storage_path: Path | None = Path("./.ingestion_storage")
+
 
 @lru_cache
 def get_settings() -> Settings:
