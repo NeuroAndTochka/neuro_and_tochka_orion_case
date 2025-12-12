@@ -40,6 +40,7 @@ logger.info(
 async def lifespan(app: FastAPI):
     await init_db(engine)
     app.state.session_factory = SessionLocal
+    app.state.settings = settings
     yield
     await engine.dispose()
 

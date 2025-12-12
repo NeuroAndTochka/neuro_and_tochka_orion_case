@@ -79,11 +79,16 @@ services:
     build:
       context: ./services/document_service
     container_name: document_service
+    depends_on:
+      - postgres
+      - minio
+      - minio-setup
     environment:
       DOC_HOST: 0.0.0.0
       DOC_PORT: "8060"
       DOC_LOG_LEVEL: info
-      DOC_MOCK_MODE: "true"
+      DOC_MOCK_MODE: "false"
+      DOC_DB_DSN: postgresql+asyncpg://visior:visior@postgres:5432/visior
       DOC_S3_ENDPOINT: http://minio:9000
       DOC_S3_BUCKET: visior-documents
       DOC_S3_ACCESS_KEY: minio
@@ -102,13 +107,22 @@ services:
       INGEST_HOST: 0.0.0.0
       INGEST_PORT: "8050"
       INGEST_LOG_LEVEL: info
-      INGEST_MOCK_MODE: "true"
+      INGEST_MOCK_MODE: "false"
       INGEST_DOC_SERVICE_BASE_URL: http://document_service:8060
       INGEST_S3_ENDPOINT: http://minio:9000
       INGEST_S3_BUCKET: visior-documents
       INGEST_S3_ACCESS_KEY: minio
       INGEST_S3_SECRET_KEY: minio123
       INGEST_S3_SECURE: "false"
+      INGEST_REDIS_URL: redis://redis:6379/0
+      INGEST_EMBEDDING_API_BASE: https://openrouter.ai/api/v1
+      # Вставьте ключ OpenRouter в переменную окружения перед запуском compose:
+      INGEST_EMBEDDING_API_KEY: sk-....
+      INGEST_EMBEDDING_MODEL: baai/bge-m3
+      INGEST_SUMMARY_API_BASE: https://openrouter.ai/api/v1
+      # Можно использовать тот же ключ, что и для эмбеддингов:
+      INGEST_SUMMARY_API_KEY: sk-....
+      INGEST_SUMMARY_MODEL: openai/gpt-5-nano
     ports:
       - "8050:8050"
     depends_on:
@@ -140,8 +154,37 @@ services:
       OBS_PORT: "8085"
       OBS_LOG_LEVEL: info
       OBS_MOCK_MODE: "true"
+      OBS_INGESTION_BASE_URL: http://ingestion_service:8050
+      OBS_DOCUMENT_BASE_URL: http://document_service:8060
     ports:
       - "8085:8085"
+    networks:
+      - visior
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_DB: visior
+      POSTGRES_USER: visior
+      POSTGRES_PASSWORD: visior
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - visior
+
+  chroma:
+    image: ghcr.io/chroma-core/chroma:latest
+    container_name: chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma-data
+    volumes:
+      - chroma-data:/chroma-data
+    ports:
+      - "8000:8000"
     networks:
       - visior
 
@@ -175,7 +218,14 @@ services:
       - minio
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 minio minio123 &&
+      set -e;
+      for i in $(seq 1 20); do
+        if mc alias set local http://minio:9000 minio minio123 >/dev/null 2>&1; then
+          break;
+        fi;
+        echo 'waiting for minio...';
+        sleep 3;
+      done;
       mc mb -p local/visior-documents || true
       "
     networks:
@@ -187,3 +237,5 @@ networks:
 
 volumes:
   minio-data:
+  chroma-data:
+  postgres-data:

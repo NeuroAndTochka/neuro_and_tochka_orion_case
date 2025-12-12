@@ -26,9 +26,15 @@ class Settings(BaseSettings):
     s3_secure: bool = True
     local_storage_path: Path | None = Path("./.ingestion_storage")
 
-    embedding_api_base: str | None = None  # OpenAI-compatible endpoint
+    embedding_api_base: str | None = None  # OpenAI-compatible endpoint (например, https://openrouter.ai/api/v1)
     embedding_api_key: str | None = None
-    embedding_model: str = "text-embedding-3-small"
+    embedding_model: str = "baai/bge-m3"
+
+    summary_api_base: str | None = None  # OpenAI-compatible endpoint для суммаризации
+    summary_api_key: str | None = None
+    summary_model: str = "openai/gpt-4o-mini"
+    summary_referer: str | None = None
+    summary_title: str | None = None
 
     retrieval_base_url: str | None = None
 

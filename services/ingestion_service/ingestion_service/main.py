@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from ingestion_service.config import get_settings
 from ingestion_service.core.embedding import EmbeddingClient
 from ingestion_service.core.jobs import JobStore
+from ingestion_service.core.summarizer import Summarizer
 from ingestion_service.core.storage import StorageClient
 from ingestion_service.core.vector_store import VectorStore
 from ingestion_service.logging import configure_logging
@@ -20,6 +21,7 @@ async def lifespan(app: FastAPI):
     app.state.storage = StorageClient(settings)
     app.state.settings = settings
     app.state.embedding_client = EmbeddingClient(settings)
+    app.state.summarizer = Summarizer(settings)
     app.state.vector_store = VectorStore(path=str(settings.chroma_path), enabled=not settings.mock_mode)
     yield
 

@@ -60,6 +60,17 @@ async def ui() -> str:
       <button onclick="uploadDoc()">Отправить</button>
       <pre id="docLog"></pre>
     </section>
+
+    <section>
+      <h3>Запуск ingestion</h3>
+      <label for="ingestFile">Файл</label>
+      <input id="ingestFile" type="file" />
+      <label for="ingestStatusJob">job_id (для статуса)</label>
+      <input id="ingestStatusJob" placeholder="job_id" />
+      <button onclick="runIngestion()">Отправить в ingestion</button>
+      <button onclick="checkIngestionStatus()">Проверить статус</button>
+      <pre id="ingestLog"></pre>
+    </section>
   </div>
 
   <div class="row">
@@ -85,6 +96,16 @@ async def ui() -> str:
       <input id="llmExp" placeholder="exp_id" />
       <button onclick="runLLM()">Запустить</button>
       <pre id="llmLog"></pre>
+    </section>
+
+    <section>
+      <h3>Документы в БД</h3>
+      <button onclick="loadDocuments()">Обновить список</button>
+      <label for="docDetailId">doc_id для деталей</label>
+      <input id="docDetailId" placeholder="doc_xxx" />
+      <button onclick="loadDocumentDetail()">Показать детали</button>
+      <pre id="docsList"></pre>
+      <pre id="docDetail"></pre>
     </section>
   </div>
 
@@ -132,6 +153,44 @@ async def ui() -> str:
       };
       const res = await fetch("/internal/observer/llm/dry-run", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
       log("llmLog", await res.json());
+    }
+
+    async function runIngestion() {
+      const fileInput = document.getElementById("ingestFile");
+      if (!fileInput.files.length) {
+        log("ingestLog", {error: "Выберите файл"});
+        return;
+      }
+      const fd = new FormData();
+      fd.append("file", fileInput.files[0]);
+      const res = await fetch("/internal/observer/ingestion/enqueue", {
+        method: "POST",
+        headers: {"X-Tenant-ID": document.getElementById("tenant").value},
+        body: fd
+      });
+      log("ingestLog", await res.json());
+    }
+
+    async function checkIngestionStatus() {
+      const jobId = document.getElementById("ingestStatusJob").value;
+      const res = await fetch("/internal/observer/ingestion/status", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-Tenant-ID": document.getElementById("tenant").value},
+        body: JSON.stringify({job_id: jobId})
+      });
+      log("ingestLog", await res.json());
+    }
+
+    async function loadDocuments() {
+      const res = await fetch("/internal/observer/documents", {headers: headers()});
+      log("docsList", await res.json());
+    }
+
+    async function loadDocumentDetail() {
+      const docId = document.getElementById("docDetailId").value;
+      if (!docId) { log("docDetail", {error: "Укажите doc_id"}); return; }
+      const res = await fetch(`/internal/observer/documents/${docId}/detail`, {headers: headers()});
+      log("docDetail", await res.json());
     }
   </script>
 </body>

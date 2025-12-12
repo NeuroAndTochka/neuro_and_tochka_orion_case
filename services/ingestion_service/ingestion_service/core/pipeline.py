@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
 from typing import List, Sequence
+from urllib.parse import urlparse
 
 import httpx
+import structlog
 
 from ingestion_service.core.embedding import EmbeddingClient
 from ingestion_service.core.jobs import JobStore
 from ingestion_service.core.parser import DocumentParser
+from ingestion_service.core.summarizer import Summarizer
 from ingestion_service.core.storage import StorageClient
 from ingestion_service.schemas import IngestionTicket
+
+logger = structlog.get_logger(__name__)
 
 
 def _split_chunks(text: str, max_len: int = 2048) -> List[str]:
@@ -60,6 +67,7 @@ def process_file(
     ticket: IngestionTicket,
     storage: StorageClient,
     embedding: EmbeddingClient,
+    summarizer: Summarizer,
     jobs: JobStore,
     doc_service_base_url: str | None,
     max_pages: int,
@@ -67,17 +75,36 @@ def process_file(
     chunk_size: int,
     vector_store,
 ) -> None:
+    tmp_file: Path | None = None
     try:
         content_bytes = storage.download_bytes(ticket.storage_uri or "")
         tmp_path = storage.resolve_local_path(ticket.storage_uri or "") if ticket.storage_uri else None
+        # Для S3/remote URI пишем во временный файл, чтобы парсер (PyPDF2/docx) корректно работал.
+        if not tmp_path or not tmp_path.exists():
+            parsed = urlparse(ticket.storage_uri or "")
+            suffix = Path(parsed.path).suffix or ".bin"
+            fh = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            fh.write(content_bytes)
+            fh.flush()
+            fh.close()
+            tmp_path = Path(fh.name)
+            tmp_file = tmp_path
+
         parser = DocumentParser(max_pages=max_pages, max_file_mb=max_file_mb)
-        text = content_bytes.decode("utf-8", errors="ignore")
+        text = DocumentParser._clean_text(content_bytes.decode("utf-8", errors="ignore"))
         if tmp_path and tmp_path.exists():
             pages, meta = parser.parse(tmp_path)
             text = "\n".join(pages)
         else:
             pages = [text]
             meta = {"pages": len(pages), "title": "unknown"}
+        logger.debug(
+            "ingestion_parsed",
+            doc_id=ticket.doc_id,
+            tenant_id=ticket.tenant_id,
+            pages=len(pages),
+            chunk_size=chunk_size,
+        )
 
         sections, chunk_pairs = _build_sections_from_pages(pages, chunk_size)
         chunk_texts = [c[1] for c in chunk_pairs]
@@ -86,16 +113,29 @@ def process_file(
         doc_embedding = embedding.embed([text])[0]
         section_embeddings = embedding.embed([s["text"] for s in sections])
         chunk_embeddings = embedding.embed(chunk_texts) if chunk_texts else []
+        logger.debug(
+            "ingestion_embeddings_ready",
+            doc_id=ticket.doc_id,
+            tenant_id=ticket.tenant_id,
+            sections=len(sections),
+            chunks=len(chunk_pairs),
+        )
+
+        # LLM summary для секций
+        try:
+            section_summaries = summarizer.summarize([s["text"] for s in sections])
+        except Exception:
+            section_summaries = [DocumentParser._clean_text(s["text"])[:200] for s in sections]
 
         sections_payload = []
-        for sec, emb in zip(sections, section_embeddings):
+        for sec, emb, summary in zip(sections, section_embeddings, section_summaries):
             payload = {
                 "section_id": sec["section_id"],
                 "title": sec["title"],
                 "page_start": sec["page_start"],
                 "page_end": sec["page_end"],
                 "chunk_ids": sec["chunk_ids"],
-                "summary": sec["summary"],
+                "summary": summary,
                 "storage_path": sec["storage_path"],
             }
             payload["embedding"] = emb  # можно игнорировать на стороне Document Service
@@ -119,8 +159,14 @@ def process_file(
                         },
                         headers={"X-Tenant-ID": ticket.tenant_id},
                     )
+                logger.debug(
+                    "ingestion_document_service_updated",
+                    doc_id=ticket.doc_id,
+                    tenant_id=ticket.tenant_id,
+                    sections=len(sections_payload),
+                )
             except Exception:
-                pass
+                logger.exception("ingestion_document_service_update_failed", doc_id=ticket.doc_id, tenant_id=ticket.tenant_id)
 
         # vector store запись
         if vector_store:
@@ -128,6 +174,13 @@ def process_file(
             vector_store.upsert_sections(ticket.doc_id, ticket.tenant_id, section_embeddings, sections_payload)
             if chunk_embeddings:
                 vector_store.upsert_chunks(ticket.doc_id, ticket.tenant_id, chunk_embeddings, chunk_pairs)
+            logger.debug(
+                "ingestion_vectorstore_upserted",
+                doc_id=ticket.doc_id,
+                tenant_id=ticket.tenant_id,
+                sections=len(sections_payload),
+                chunks=len(chunk_pairs),
+            )
 
         jobs.update(ticket.job_id, status="indexed", storage_uri=ticket.storage_uri)
         jobs.publish_event(
@@ -142,3 +195,9 @@ def process_file(
     except Exception as exc:  # pragma: no cover
         jobs.update(ticket.job_id, status="failed", error=str(exc))
         jobs.publish_event({"event": "ingestion_failed", "doc_id": ticket.doc_id, "tenant_id": ticket.tenant_id, "error": str(exc)})
+    finally:
+        if tmp_file and tmp_file.exists():
+            try:
+                tmp_file.unlink()
+            except OSError:
+                pass

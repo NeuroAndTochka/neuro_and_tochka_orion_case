@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+import httpx
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 
+from ml_observer.config import Settings
 from ml_observer.core.repository import ObserverRepository
 from ml_observer.schemas import (
     DocumentStatus,
@@ -33,6 +35,13 @@ def get_tenant_id(request: Request) -> str:
     if not tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing X-Tenant-ID header")
     return tenant_id
+
+
+def get_settings(request: Request) -> Settings:
+    settings = getattr(request.app.state, "settings", None)
+    if not settings:
+        raise RuntimeError("Settings are not configured")
+    return settings
 
 
 @router.post("/experiments", response_model=ExperimentDetail, status_code=status.HTTP_201_CREATED)
@@ -92,6 +101,118 @@ async def get_document(
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document_not_found")
     return document
+
+
+@router.post("/ingestion/enqueue", response_model=DocumentStatus, status_code=status.HTTP_201_CREATED)
+async def proxy_ingestion_enqueue(
+    file: UploadFile = File(...),
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+) -> DocumentStatus:
+    if not settings.ingestion_base_url:
+        raise HTTPException(status_code=503, detail="ingestion_not_configured")
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{settings.ingestion_base_url}/internal/ingestion/enqueue",
+                files={"file": (file.filename, await file.read(), file.content_type or "application/octet-stream")},
+                headers={"X-Tenant-ID": tenant_id},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return DocumentStatus(
+                doc_id=data["doc_id"],
+                status=data.get("status", "queued"),
+                storage_uri=data.get("storage_uri"),
+                experiment_id=None,
+                meta={"job_id": data.get("job_id")},
+            )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/ingestion/status", response_model=DocumentStatus)
+async def proxy_ingestion_status(
+    payload: dict,
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+) -> DocumentStatus:
+    if not settings.ingestion_base_url:
+        raise HTTPException(status_code=503, detail="ingestion_not_configured")
+    job_id = payload.get("job_id")
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id required")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{settings.ingestion_base_url}/internal/ingestion/status",
+                json={"job_id": job_id, "status": payload.get("status", "processing")},
+                headers={"X-Tenant-ID": tenant_id},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return DocumentStatus(
+                doc_id=data["doc_id"],
+                status=data.get("status"),
+                storage_uri=data.get("storage_uri"),
+                experiment_id=None,
+                meta={"job_id": job_id},
+            )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/documents")
+async def list_documents(
+    status_filter: Optional[str] = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.document_base_url:
+        raise HTTPException(status_code=503, detail="document_service_not_configured")
+    params = {"status": status_filter, "limit": limit, "offset": offset}
+    params = {k: v for k, v in params.items() if v is not None}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{settings.document_base_url}/internal/documents",
+                params=params,
+                headers={"X-Tenant-ID": tenant_id},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/documents/{doc_id}/detail")
+async def get_document_detail(
+    doc_id: str,
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.document_base_url:
+        raise HTTPException(status_code=503, detail="document_service_not_configured")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{settings.document_base_url}/internal/documents/{doc_id}",
+                headers={"X-Tenant-ID": tenant_id},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/retrieval/run", response_model=RetrievalRunResponse, status_code=status.HTTP_201_CREATED)

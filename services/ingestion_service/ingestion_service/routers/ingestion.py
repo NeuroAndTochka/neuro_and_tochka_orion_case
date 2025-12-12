@@ -9,6 +9,7 @@ from ingestion_service.core.jobs import JobRecord, JobStore
 from ingestion_service.core.pipeline import process_file
 from ingestion_service.core.storage import StorageClient
 from ingestion_service.core.embedding import EmbeddingClient
+from ingestion_service.core.summarizer import Summarizer
 from ingestion_service.core.vector_store import VectorStore
 from ingestion_service.schemas import EnqueueResponse, StatusPayload
 
@@ -50,6 +51,13 @@ def get_vector_store(request: Request) -> VectorStore:
     return store
 
 
+def get_summarizer(request: Request) -> Summarizer:
+    client = getattr(request.app.state, "summarizer", None)
+    if client is None:
+        raise RuntimeError("Summarizer is not configured")
+    return client
+
+
 def get_tenant_id(request: Request) -> str:
     tenant_id = request.headers.get("X-Tenant-ID")
     if not tenant_id:
@@ -67,6 +75,7 @@ async def enqueue_document(
     storage: StorageClient = Depends(get_storage),
     settings: Settings = Depends(get_settings),
     embedding: EmbeddingClient = Depends(get_embedding_client),
+    summarizer: Summarizer = Depends(get_summarizer),
     vector_store: VectorStore = Depends(get_vector_store),
     tenant_id: str = Depends(get_tenant_id),
     background: BackgroundTasks = None,
@@ -114,6 +123,7 @@ async def enqueue_document(
             ticket=ticket,
             storage=storage,
             embedding=embedding,
+            summarizer=summarizer,
             jobs=jobs,
             doc_service_base_url=settings.doc_service_base_url,
             max_pages=settings.max_pages,
