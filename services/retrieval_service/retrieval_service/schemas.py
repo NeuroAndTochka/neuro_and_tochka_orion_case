@@ -5,10 +5,21 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class RetrievalFilters(BaseModel):
+    product: Optional[str] = None
+    version: Optional[str] = None
+    tags: Optional[List[str]] = None
+    doc_ids: Optional[List[str]] = None
+    section_ids: Optional[List[str]] = None
+
+
 class RetrievalQuery(BaseModel):
     query: str
     tenant_id: str
     max_results: Optional[int] = None
+    filters: Optional[RetrievalFilters] = None
+    doc_ids: Optional[List[str]] = None
+    section_ids: Optional[List[str]] = None
 
 
 class RetrievalHit(BaseModel):

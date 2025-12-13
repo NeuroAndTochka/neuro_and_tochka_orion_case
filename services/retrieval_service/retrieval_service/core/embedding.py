@@ -7,7 +7,7 @@ from typing import List, Sequence
 import httpx
 import structlog
 
-from ingestion_service.config import Settings
+from retrieval_service.config import Settings
 
 
 class EmbeddingClient:
@@ -15,38 +15,36 @@ class EmbeddingClient:
         self.settings = settings
         self._mock = settings.mock_mode or not settings.embedding_api_base
         self._logger = structlog.get_logger(__name__)
-        self.max_attempts = getattr(settings, "embedding_max_attempts", 3)
-        self.retry_delay = getattr(settings, "embedding_retry_delay_seconds", 1.0)
+        self.max_attempts = max(1, settings.embedding_max_attempts)
+        self.retry_delay = settings.embedding_retry_delay_seconds
 
     def embed(self, texts: Sequence[str]) -> List[List[float]]:
         if not texts:
             return []
         if self._mock:
-            self._logger.info("embedding_mock", items=len(texts), model=self.settings.embedding_model)
+            self._logger.info("retrieval_embedding_mock", items=len(texts))
             return [self._pseudo_embedding(text) for text in texts]
+
         headers = {"Authorization": f"Bearer {self.settings.embedding_api_key}"} if self.settings.embedding_api_key else {}
-        # OpenRouter уже содержит префикс /api/v1, поэтому выбираем суффикс динамически
         base = (self.settings.embedding_api_base or "").rstrip("/")
         path = "/embeddings" if base.endswith("/v1") else "/v1/embeddings"
         payload = {"model": self.settings.embedding_model, "input": list(texts), "encoding_format": "float"}
-        attempts = max(1, self.max_attempts)
         last_error: Exception | None = None
-        for attempt in range(1, attempts + 1):
+        for attempt in range(1, self.max_attempts + 1):
             started = time.perf_counter()
             try:
                 with httpx.Client(base_url=base, timeout=20.0) as client:
                     self._logger.info(
-                        "embedding_request",
+                        "retrieval_embedding_request",
                         url=base + path,
                         model=self.settings.embedding_model,
                         items=len(texts),
-                        mock=False,
                         attempt=attempt,
                     )
                     resp = client.post(path, json=payload, headers=headers)
                     latency_ms = int((time.perf_counter() - started) * 1000)
                     self._logger.info(
-                        "embedding_response",
+                        "retrieval_embedding_response",
                         status_code=resp.status_code,
                         model=self.settings.embedding_model,
                         items=len(texts),
@@ -56,31 +54,12 @@ class EmbeddingClient:
                     resp.raise_for_status()
                     data = resp.json()
                     return [item["embedding"] for item in data.get("data", [])]
-            except httpx.HTTPStatusError as exc:
+            except Exception as exc:  # pragma: no cover - network errors
                 last_error = exc
-                self._logger.warning(
-                    "embedding_http_error",
-                    status_code=exc.response.status_code if exc.response else None,
-                    attempt=attempt,
-                    max_attempts=attempts,
-                )
-            except httpx.RequestError as exc:
-                last_error = exc
-                self._logger.warning(
-                    "embedding_request_error",
-                    reason=str(exc),
-                    attempt=attempt,
-                    max_attempts=attempts,
-                )
-            if attempt < attempts:
-                time.sleep(self.retry_delay)
-        # Fallback на псевдо-эмбеддинги, чтобы не ронять пайплайн
-        self._logger.error(
-            "embedding_fallback",
-            reason=str(last_error) if last_error else "unknown",
-            model=self.settings.embedding_model,
-            items=len(texts),
-        )
+                self._logger.warning("retrieval_embedding_attempt_failed", attempt=attempt, error=str(exc))
+                if attempt < self.max_attempts:
+                    time.sleep(self.retry_delay)
+        self._logger.error("retrieval_embedding_fallback", reason=str(last_error) if last_error else "unknown")
         return [self._pseudo_embedding(text) for text in texts]
 
     @staticmethod

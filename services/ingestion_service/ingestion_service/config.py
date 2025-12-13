@@ -35,8 +35,15 @@ class Settings(BaseSettings):
     summary_model: str = "openai/gpt-4o-mini"
     summary_referer: str | None = None
     summary_title: str | None = None
+    embedding_max_attempts: int = 3
+    embedding_retry_delay_seconds: float = 1.0
 
     retrieval_base_url: str | None = None
+
+    worker_count: int = 1
+    queue_name: str = "ingestion_queue"
+    max_attempts: int = 3
+    retry_delay_seconds: int = 5
 
     max_pages: int = 2000
     max_file_mb: int = 50

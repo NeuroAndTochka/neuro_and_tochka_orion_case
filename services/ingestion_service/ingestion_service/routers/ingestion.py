@@ -16,6 +16,7 @@ from fastapi import (
 
 from ingestion_service.config import Settings
 from ingestion_service.core.jobs import JobRecord, JobStore
+from ingestion_service.core.queue import IngestionQueue, WorkItem
 from ingestion_service.core.pipeline import process_file
 from ingestion_service.core.storage import StorageClient
 from ingestion_service.core.embedding import EmbeddingClient
@@ -26,6 +27,7 @@ from ingestion_service.schemas import (
     JobStatusResponse,
     StatusPayload,
     SummarizerConfig,
+    ChunkingConfig,
 )
 
 router = APIRouter(prefix="/internal/ingestion", tags=["ingestion"])
@@ -73,6 +75,13 @@ def get_summarizer(request: Request) -> Summarizer:
     return client
 
 
+def get_queue(request: Request) -> IngestionQueue:
+    queue = getattr(request.app.state, "queue", None)
+    if queue is None:
+        raise RuntimeError("Queue is not configured")
+    return queue
+
+
 def get_tenant_id(request: Request) -> str:
     tenant_id = request.headers.get("X-Tenant-ID")
     if not tenant_id:
@@ -95,6 +104,7 @@ async def enqueue_document(
     summarizer: Summarizer = Depends(get_summarizer),
     vector_store: VectorStore = Depends(get_vector_store),
     tenant_id: str = Depends(get_tenant_id),
+    queue: IngestionQueue = Depends(get_queue),
     background: BackgroundTasks = None,
 ) -> EnqueueResponse:
     content = await file.read()
@@ -134,7 +144,18 @@ async def enqueue_document(
             # Логируем, но не падаем
             pass
 
-    if background is not None:
+    work_item = WorkItem(
+        job_id=ticket.job_id,
+        tenant_id=ticket.tenant_id,
+        doc_id=ticket.doc_id,
+        storage_uri=storage_uri,
+        product=product,
+        version=version,
+        tags=tags,
+    )
+    if settings.worker_count > 0:
+        await queue.enqueue(work_item)
+    elif background is not None:
         background.add_task(
             process_file,
             ticket=ticket,
@@ -146,6 +167,7 @@ async def enqueue_document(
             max_pages=settings.max_pages,
             max_file_mb=settings.max_file_mb,
             chunk_size=settings.chunk_size,
+            chunk_overlap=settings.chunk_overlap,
             vector_store=vector_store,
         )
 
@@ -236,6 +258,23 @@ async def update_summarizer_config(
         use_roles=payload.use_roles,
     )
     return SummarizerConfig(**updated)
+
+
+@router.get("/chunking/config", response_model=ChunkingConfig)
+async def get_chunking_config(settings: Settings = Depends(get_settings)) -> ChunkingConfig:
+    return ChunkingConfig(chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap)
+
+
+@router.post("/chunking/config", response_model=ChunkingConfig)
+async def update_chunking_config(
+    payload: ChunkingConfig,
+    settings: Settings = Depends(get_settings),
+) -> ChunkingConfig:
+    if payload.chunk_size is not None:
+        settings.chunk_size = payload.chunk_size
+    if payload.chunk_overlap is not None:
+        settings.chunk_overlap = payload.chunk_overlap
+    return ChunkingConfig(chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap)
 
 
 @router.get("/documents/{doc_id}/tree")

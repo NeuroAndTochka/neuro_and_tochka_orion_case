@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+import time
 from typing import List, Sequence
 from urllib.parse import urlparse
 
@@ -18,30 +19,47 @@ from ingestion_service.schemas import IngestionTicket
 logger = structlog.get_logger(__name__)
 
 
-def _split_chunks(text: str, max_len: int = 2048) -> List[str]:
+def _split_chunks(text: str, max_len: int = 2048, overlap: int = 0) -> List[str]:
+    """Разбивает текст на чанки с возможным перекрытием по символам."""
     words = text.split()
     chunks: List[str] = []
-    current: List[str] = []
-    current_len = 0
-    for w in words:
-        current.append(w)
-        current_len += len(w) + 1
-        if current_len >= max_len:
-            chunks.append(" ".join(current))
-            current = []
-            current_len = 0
-    if current:
-        chunks.append(" ".join(current))
+    start = 0
+    n = len(words)
+    if n == 0:
+        return [text]
+
+    while start < n:
+        end = start
+        length = 0
+        while end < n and length + len(words[end]) + 1 <= max_len:
+            length += len(words[end]) + 1
+            end += 1
+        if end == start:  # слово длиннее max_len — минимальный прогон
+            end = start + 1
+        chunk = " ".join(words[start:end])
+        chunks.append(chunk)
+        if end >= n:
+            break
+        if overlap <= 0:
+            start = end
+        else:
+            # рассчитываем новый старт так, чтобы перекрытие по символам было ~overlap
+            overlap_chars = 0
+            new_start = end
+            while new_start > 0 and overlap_chars < overlap and new_start - 1 >= 0:
+                new_start -= 1
+                overlap_chars += len(words[new_start]) + 1
+            start = new_start
     return chunks or [text]
 
 
-def _build_sections_from_pages(pages: Sequence[str], chunk_size: int) -> tuple[List[dict], List[tuple[str, str]]]:
+def _build_sections_from_pages(pages: Sequence[str], chunk_size: int, chunk_overlap: int) -> tuple[List[dict], List[tuple[str, str]]]:
     """Возвращает секции и список (chunk_id, chunk_text)."""
     sections: List[dict] = []
     chunks: List[tuple[str, str]] = []
     for idx, page_text in enumerate(pages, start=1):
         section_id = f"sec_{idx}"
-        page_chunks = _split_chunks(page_text, max_len=chunk_size)
+        page_chunks = _split_chunks(page_text, max_len=chunk_size, overlap=chunk_overlap)
         chunk_ids = []
         for c_idx, chunk_text in enumerate(page_chunks, start=1):
             cid = f"chunk_{idx}_{c_idx}"
@@ -73,8 +91,17 @@ def process_file(
     max_pages: int,
     max_file_mb: int,
     chunk_size: int,
+    chunk_overlap: int,
     vector_store,
-) -> None:
+) -> bool:
+    start_time = time.perf_counter()
+    logger.info(
+        "ingestion_process_started",
+        job_id=ticket.job_id,
+        doc_id=ticket.doc_id,
+        tenant_id=ticket.tenant_id,
+        storage_uri=ticket.storage_uri,
+    )
     tmp_file: Path | None = None
     try:
         content_bytes = storage.download_bytes(ticket.storage_uri or "")
@@ -106,7 +133,7 @@ def process_file(
             chunk_size=chunk_size,
         )
 
-        sections, chunk_pairs = _build_sections_from_pages(pages, chunk_size)
+        sections, chunk_pairs = _build_sections_from_pages(pages, chunk_size, chunk_overlap)
         chunk_texts = [c[1] for c in chunk_pairs]
 
         # Embeddings: документ, секции, чанки
@@ -281,9 +308,29 @@ def process_file(
                 "chunks": len(chunk_texts),
             }
         )
+        logger.info(
+            "ingestion_process_finished",
+            job_id=ticket.job_id,
+            doc_id=ticket.doc_id,
+            tenant_id=ticket.tenant_id,
+            status="indexed",
+            pages=len(pages),
+            sections=len(sections),
+            chunks=len(chunk_texts),
+            duration_ms=int((time.perf_counter() - start_time) * 1000),
+        )
+        return True
     except Exception as exc:  # pragma: no cover
         jobs.update(ticket.job_id, status="failed", error=str(exc))
         jobs.publish_event({"event": "ingestion_failed", "doc_id": ticket.doc_id, "tenant_id": ticket.tenant_id, "error": str(exc)})
+        logger.exception(
+            "ingestion_process_failed",
+            job_id=ticket.job_id,
+            doc_id=ticket.doc_id,
+            tenant_id=ticket.tenant_id,
+            error=str(exc),
+        )
+        return False
     finally:
         if tmp_file and tmp_file.exists():
             try:

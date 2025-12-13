@@ -160,6 +160,7 @@ services:
       OBS_MOCK_MODE: "true"
       OBS_INGESTION_BASE_URL: http://ingestion_service:8050
       OBS_DOCUMENT_BASE_URL: http://document_service:8060
+      OBS_RETRIEVAL_BASE_URL: http://retrieval_service:8040
     ports:
       - "8085:8085"
     networks:

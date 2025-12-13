@@ -46,3 +46,8 @@ class SummarizerConfig(BaseModel):
     model: Optional[str] = None
     max_tokens: Optional[int] = None
     use_roles: Optional[bool] = None
+
+
+class ChunkingConfig(BaseModel):
+    chunk_size: Optional[int] = None
+    chunk_overlap: Optional[int] = None

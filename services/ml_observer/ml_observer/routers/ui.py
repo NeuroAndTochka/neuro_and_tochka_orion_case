@@ -53,6 +53,17 @@ async def ui() -> str:
     </section>
 
     <section>
+      <h3>Chunking</h3>
+      <label for="chunkSize">Chunk size (chars)</label>
+      <input id="chunkSize" type="number" value="2048" />
+      <label for="chunkOverlap">Overlap (chars)</label>
+      <input id="chunkOverlap" type="number" value="200" />
+      <button onclick="loadChunkingConfig()">Загрузить текущие</button>
+      <button onclick="saveChunkingConfig()">Сохранить</button>
+      <pre id="chunkConfig"></pre>
+    </section>
+
+    <section>
       <h3>Создать эксперимент</h3>
       <label for="expName">Название</label>
       <input id="expName" value="Demo experiment" />
@@ -100,6 +111,20 @@ async def ui() -> str:
       <input id="retrExp" placeholder="exp_id" />
       <button onclick="runRetrieval()">Запустить</button>
       <pre id="retrLog"></pre>
+    </section>
+
+    <section>
+      <h3>Retrieval (backend)</h3>
+      <label for="retrQuery">Query</label>
+      <input id="retrQuery" value="ldap" />
+      <label for="retrMax">max_results</label>
+      <input id="retrMax" type="number" value="5" />
+      <label for="retrDocIds">doc_ids (через ,)</label>
+      <input id="retrDocIds" placeholder="doc_1,doc_2" />
+      <label for="retrFilters">filters (JSON)</label>
+      <textarea id="retrFilters">{}</textarea>
+      <button onclick="runRetrievalBackend()">Выполнить</button>
+      <pre id="retrBackendLog"></pre>
     </section>
 
     <section>
@@ -163,6 +188,21 @@ async def ui() -> str:
       const res = await fetch("/internal/observer/summarizer/config", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
       log("sumConfig", await res.json());
     }
+    async function loadChunkingConfig() {
+      const res = await fetch("/internal/observer/chunking/config", {headers: headers()});
+      const data = await res.json();
+      document.getElementById("chunkSize").value = data.chunk_size || 2048;
+      document.getElementById("chunkOverlap").value = data.chunk_overlap || 0;
+      log("chunkConfig", data);
+    }
+    async function saveChunkingConfig() {
+      const payload = {
+        chunk_size: Number(document.getElementById("chunkSize").value || 0) || null,
+        chunk_overlap: Number(document.getElementById("chunkOverlap").value || 0) || null
+      };
+      const res = await fetch("/internal/observer/chunking/config", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
+      log("chunkConfig", await res.json());
+    }
     async function uploadDoc() {
       const payload = {
         doc_id: document.getElementById("docId").value,
@@ -181,6 +221,22 @@ async def ui() -> str:
       };
       const res = await fetch("/internal/observer/retrieval/run", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
       log("retrLog", await res.json());
+    }
+    async function runRetrievalBackend() {
+      const docIds = (document.getElementById("retrDocIds").value || "")
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean);
+      let filters = {};
+      try { filters = JSON.parse(document.getElementById("retrFilters").value || "{}"); } catch (e) { filters = {}; }
+      const payload = {
+        query: document.getElementById("retrQuery").value || "",
+        max_results: Number(document.getElementById("retrMax").value || 0) || null,
+        doc_ids: docIds.length ? docIds : null,
+        filters: filters
+      };
+      const res = await fetch("/internal/observer/retrieval/search", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
+      log("retrBackendLog", await res.json());
     }
     async function runLLM() {
       const payload = {

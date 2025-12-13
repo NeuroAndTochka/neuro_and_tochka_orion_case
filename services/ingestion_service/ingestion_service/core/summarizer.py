@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import List, Sequence
 
 import structlog
@@ -48,13 +49,20 @@ class Summarizer:
         if self._mock or not self._client:
             if not self._client and not self._mock:
                 self._logger.warning("summary_fallback", reason="OpenAI client not initialized")
+            self._logger.info("summary_mock", items=len(texts), model=self.model)
             return [self._fallback(text) for text in texts]
 
         results: List[str] = []
         for text in texts:
             try:
                 messages = self._build_messages(text)
-                self._logger.debug("summary_request", model=self.model, use_roles=self.use_roles)
+                started = time.perf_counter()
+                self._logger.info(
+                    "summary_request",
+                    model=self.model,
+                    use_roles=self.use_roles,
+                    prompt_chars=len(text),
+                )
                 resp = self._client.chat.completions.create(
                     model=self.model,
                     messages=messages,
@@ -63,10 +71,22 @@ class Summarizer:
                     timeout=self.timeout,
                 )
                 content = resp.choices[0].message.content if resp and resp.choices else ""
+                latency_ms = int((time.perf_counter() - started) * 1000)
                 results.append(DocumentParser._clean_text(content or "") or self._fallback(text))
-                self._logger.debug("summary_response", status="ok")
+                self._logger.info(
+                    "summary_response",
+                    status="ok",
+                    model=self.model,
+                    latency_ms=latency_ms,
+                    completion_chars=len(content or ""),
+                )
             except Exception as exc:  # pragma: no cover - network path
-                self._logger.warning("summary_fallback", reason=str(exc))
+                self._logger.warning(
+                    "summary_fallback",
+                    reason=str(exc),
+                    model=self.model,
+                    prompt_chars=len(text),
+                )
                 results.append(self._fallback(text))
         return results
 

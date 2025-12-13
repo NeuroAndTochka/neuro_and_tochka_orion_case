@@ -1,75 +1,67 @@
 # ML Observer Service
 
 ## Назначение
-ML Observer — служебный сервис‑песочница для ML/IR команды. Он позволяет:
-- загружать тестовые документы и прогонять их через ingestion → document → retrieval пайплайн без влияния на прод;
-- управлять параметрами retrieval/rerank (k, фильтры, модели) и сравнивать пресеты;
-- запускать A/B эксперименты и видеть metrikи (latency, precision, coverage);
-- просматривать промежуточные артефакты (chunks, скоры reranker'а) и логи пайплайна.
-
-Сервис нужен для быстрого тюнинга, регрессионных проверок и демонстраций качества без деплоя нового кода в основной backend.
+ML Observer — служебная песочница для ML/IR. Текущая реализация хранит эксперименты/прогоны в БД и даёт ручки/UI для ручных запусков ingestion/retrieval/LLM (retrieval/LLM сейчас mock). Нужен для отладки и демонстраций без влияния на прод.
 
 ## Архитектура
-- FastAPI backend (`services/ml_observer`) + lightweight frontend (FastAPI templates или panel/Streamlit) для UI.
-- Отдельная PostgreSQL база (`observer_db`) для хранения экспериментов, пресетов и результатов прогона.
-- Доступ к staging MinIO/S3 бакету (`observer-artifacts`) и к публичным API существующих сервисов (ingestion, document, retrieval, llm).
-- Очередь фоновых задач (FastAPI BackgroundTasks / Celery) для длительных прогонов.
-- Конфигурация через `OBS_*` переменные.
+- FastAPI (`services/ml_observer`) + статический HTML UI `/ui`.
+- Хранение: SQLite по умолчанию; в prod-режиме требуется внешний PostgreSQL DSN.
+- Эксперименты/раны/документы — таблицы в локальной БД (SQLAlchemy).
+- Прокси в ingestion/doc сервисы (если заданы `OBS_INGESTION_BASE_URL` / `OBS_DOCUMENT_BASE_URL`); retrieval/LLM сейчас мокируются.
+- Конфигурация через `OBS_*`.
 
 ```
-Frontend UI → ML Observer API → (Ingestion → Document → Retrieval → LLM)
-                               ↘ PostgreSQL (experiments)
-                               ↘ MinIO (test artifacts)
+Frontend → ML Observer API → (Ingestion → Document)*
+                         ↘ SQLite/PostgreSQL (experiments)
+* Retrieval/LLM — сейчас mock
 ```
 
 ## Основные сценарии
-1. **Test Upload.** Пользователь загружает документ + параметры обработки → сервис вызывает ingestion API с отдельным tenant `observer_tenant` и отслеживает статус до индексации.
-2. **Retrieval Playground.** UI позволяет выбрать документ/датасет, задать `top_k`, фильтры по тегам, веса rerank → API делает запрос в Retrieval Service и отображает чанки, оценки, rerank результат.
-3. **Parameter Experiments.** Пользователь создает эксперимент (описание, параметры, запросы). Сервис выполняет серию запусков, сохраняет метрики и строит отчеты.
-4. **Rerank/LLM Debug.** Возможность запустить LLM Service на сохраненном контексте и сравнить ответы разных конфигураций.
-5. **Веб-интерфейс.** Встроенная страница `/ui` (статический HTML+JS) для проверки health, быстрого создания экспериментов, mock-загрузки документов, запуска retrieval и LLM dry-run вручную. Требует заголовок `X-Tenant-ID` (по умолчанию `observer_tenant`).
+1. Создание эксперимента (`POST /internal/observer/experiments`) и просмотр карточки (`GET .../{id}`) — хранение в БД.
+2. Mock загрузка документа (`POST /internal/observer/documents/upload`) — запись статуса в БД без реального файла.
+3. Проксирование ingestion: `/internal/observer/ingestion/enqueue|status` (работает при заданном `OBS_INGESTION_BASE_URL`).
+4. Проксирование Document Service: список/деталь/дерево документа (при `OBS_DOCUMENT_BASE_URL`).
+5. Retrieval playground: `/internal/observer/retrieval/run` — mock хиты + сохранение run.
+6. LLM dry-run: `/internal/observer/llm/dry-run` — mock ответ + usage, сохраняет run.
+7. UI `/ui` для ручных запусков (требуется заголовок `X-Tenant-ID`, дефолт `observer_tenant`).
 
 ## Конфигурация
 | Переменная | Описание |
 | --- | --- |
-| `OBS_HOST` / `OBS_PORT` | Параметры HTTP сервера. |
-| `OBS_LOG_LEVEL` | Уровень логов. |
-| `OBS_DB_DSN` | DSN PostgreSQL для хранения экспериментов. |
-| `OBS_MINIO_ENDPOINT`, `OBS_MINIO_BUCKET`, `OBS_MINIO_ACCESS_KEY`, `OBS_MINIO_SECRET_KEY` | Стаджинг бакет для тестовых артефактов. |
-| `OBS_DOCUMENT_BASE_URL`, `OBS_INGESTION_BASE_URL`, `OBS_RETRIEVAL_BASE_URL`, `OBS_LLM_BASE_URL` | URL внутренних сервисов (используем staging окружение). |
-| `OBS_ALLOWED_TENANT` | Специальный tenant (например, `observer_tenant`). |
-| `OBS_AUTH_TOKEN` | Service‑token для походов в другие сервисы. |
+| `OBS_MOCK_MODE` | `true` по умолчанию; при `false` требуется PostgreSQL DSN (не SQLite). |
+| `OBS_DB_DSN` | DSN БД экспериментов (`sqlite+aiosqlite:///./ml_observer.db` по умолчанию). |
+| `OBS_ALLOWED_TENANT` | Допустимый tenant (дефолт — `observer_tenant`). |
+| `OBS_INGESTION_BASE_URL` / `OBS_DOCUMENT_BASE_URL` | URL зависимых сервисов; без них ручки возвращают 503. |
+| `OBS_RETRIEVAL_BASE_URL`, `OBS_LLM_BASE_URL` | Зарезервированы под реальные вызовы (сейчас mock). |
+| `OBS_HOST` / `OBS_PORT` / `OBS_LOG_LEVEL` | Сетевые параметры и уровень логов. |
+| `OBS_MINIO_*`, `OBS_LOCAL_STORAGE_PATH` | Зарезервировано под хранение артефактов; пока не используется. |
 
 ## API (черновой список)
-- `POST /internal/observer/documents/upload` — принимает файлы/метаданные, создаёт ingestion задачу на `observer_tenant`, возвращает `experiment_id` и статус.
-- `GET /internal/observer/documents/{experiment_id}` — показывает прогресс и ссылки на документ/секции из Document Service.
-- `POST /internal/observer/retrieval/run` — тело: `{"queries": [...], "top_k": 10, "filters": {...}, "rerank": {"model": "...", "lambda": 0.5}}`. Возвращает список хитов с подробными метриками и ссылками на чанки.
-- `POST /internal/observer/experiments` — создаёт эксперимент (название, параметры, набор запросов). Сервис запускает фоновую задачу, прогресс доступен через `GET /internal/observer/experiments/{id}` и `GET /internal/observer/experiments/{id}/results`.
-- `POST /internal/observer/llm/dry-run` — позволяет протестировать ответ LLM на выбранном контексте (указывается `doc_id`, `section_ids`, prompt overrides).
-
-Все endpoint'ы защищены internal auth (например, JWT с ролью `ml_observer`) и никогда не доступны из внешнего API Gateway.
+- `POST /internal/observer/experiments`, `GET /internal/observer/experiments/{id}` — CRUD экспериментов (БД).
+- `POST /internal/observer/documents/upload`, `GET /internal/observer/documents/{doc_id}` — сохранение статуса документа в БД.
+- `POST /internal/observer/ingestion/enqueue`, `POST /internal/observer/ingestion/status` — прокси в Ingestion Service.
+- `GET /internal/observer/documents` / `{doc_id}/detail` — прокси в Document Service; `/documents/{doc_id}/tree` — через Ingestion Service.
+- `GET/POST /internal/observer/summarizer/config` — прокси настроек summarizer в Ingestion Service.
+- `POST /internal/observer/retrieval/run` — mock хиты + сохранение run.
+- `POST /internal/observer/llm/dry-run` — mock ответ + сохранение run.
+- `/ui`, `/health` — UI и healthcheck.
 
 ## Взаимодействие с другими сервисами
 | Сервис | Использование |
 | --- | --- |
-| Ingestion Service | Загрузка тестовых документов, отслеживание статусов. |
-| Document Service | Чтение метаданных/секций для отображения в UI. |
-| Retrieval Service | Выполнение поисковых запросов с произвольными параметрами. |
-| LLM Service | Проверка генерации на сохраненном контексте, сравнение моделей. |
-| MinIO | Хранение загруженных тестовых файлов и артефактов экспериментов. |
-
-Все вызовы выполняются через существующие REST API, никаких прямых подключений к базам боевых сервисов.
+| Ingestion Service | Proxy upload/status, summarizer config, дерево документа. |
+| Document Service | Proxy список/деталь документа. |
+| Retrieval / LLM | Пока mock в коде; URL поля зарезервированы. |
 
 ## Режимы работы
-- **Staging/Playground** — основной сценарий. Реальные ключи к staging MinIO/PostgreSQL, доступ открыт только ML/IR командам.
-- **Local Dev** — `OBS_DB_DSN=sqlite+aiosqlite:///observer.db`, S3 заменяется на локальную папку `OBS_LOCAL_STORAGE_PATH`. Поднимается через `docker-compose` вместе с mock версиями зависимостей.
+- **Local/MOCK** — по умолчанию: SQLite, mock retrieval/LLM, прокси отключаются если URL не заданы.
+- **Prod/Staging** — `OBS_MOCK_MODE=false`, требуется PostgreSQL DSN и реальные URL зависимых сервисов; retrieval/LLM нужно реализовать/подключить.
 
 ## Безопасность и аудит
-- Каждый запрос логируется с `user_id`, `experiment_id`, `tenant`. Загруженные документы маркируются как тестовые (`observer_tenant`).
-- Сервис никогда не пишет в продовые бакеты/БД Document Service.
-- При выгрузке результатов поддерживается маскирование PII (опционально).
+- Аутентификация не реализована; доступ нужно ограничивать сетью/ingress. Каждый запрос требует `X-Tenant-ID`.
+- Логи содержат tenant/experiment_id; допускается проверка на `OBS_ALLOWED_TENANT` на стороне окружения.
 
 ## Расширение
-- Новые типы экспериментов (например, сравнение rerank моделей) оформляем через отдельные job handlers и таблицы в БД.
-- Для интеграции с внешними визуализациями можно добавить WebSocket канал или экспорт в Prometheus/Grafana.
-- Перед добавлением нового endpoint'а синхронизируемся с ML командой, чтобы не дублировать функциональность в API Gateway.
+- Подключить реальные вызовы retrieval/LLM и хранение артефактов (MinIO).
+- Добавить фоновые задачи/воркеры и richer UI (вебсокеты, дашборды).
+- Перед добавлением новых endpoint'ов синхронизироваться с ML-командой, чтобы не дублировать API Gateway.

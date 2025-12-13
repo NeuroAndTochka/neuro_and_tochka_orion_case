@@ -57,6 +57,15 @@ class RetrievalRunRequest(BaseModel):
     experiment_id: Optional[str] = None
 
 
+class RetrievalSearchRequest(BaseModel):
+    query: str
+    max_results: Optional[int] = None
+    filters: Optional[Dict[str, Any]] = None
+    doc_ids: Optional[List[str]] = None
+    section_ids: Optional[List[str]] = None
+    trace_id: Optional[str] = None
+
+
 class RetrievalHit(BaseModel):
     doc_id: str
     section_id: Optional[str] = None

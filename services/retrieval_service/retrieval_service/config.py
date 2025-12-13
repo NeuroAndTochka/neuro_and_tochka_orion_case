@@ -13,6 +13,19 @@ class Settings(BaseSettings):
 
     mock_mode: bool = True
     max_results: int = 5
+    topk_per_doc: int = 0
+    min_score: float | None = None
+
+    vector_backend: str = "chroma"
+    chroma_path: str = "./.chroma_ingestion"
+    chroma_host: str | None = None
+    chroma_collection: str = "ingestion_chunks"
+
+    embedding_api_base: str | None = None
+    embedding_api_key: str | None = None
+    embedding_model: str = "baai/bge-m3"
+    embedding_max_attempts: int = 2
+    embedding_retry_delay_seconds: float = 1.0
 
 
 @lru_cache
