@@ -79,11 +79,21 @@ services:
     build:
       context: ./services/document_service
     container_name: document_service
+    depends_on:
+      - postgres
+      - minio
+      - minio-setup
     environment:
       DOC_HOST: 0.0.0.0
       DOC_PORT: "8060"
       DOC_LOG_LEVEL: info
-      DOC_MOCK_MODE: "true"
+      DOC_MOCK_MODE: "false"
+      DOC_DB_DSN: postgresql+asyncpg://visior:visior@postgres:5432/visior
+      DOC_S3_ENDPOINT: http://minio:9000
+      DOC_S3_BUCKET: visior-documents
+      DOC_S3_ACCESS_KEY: minio
+      DOC_S3_SECRET_KEY: minio123
+      DOC_S3_SECURE: "false"
     ports:
       - "8060:8060"
     networks:
@@ -97,9 +107,31 @@ services:
       INGEST_HOST: 0.0.0.0
       INGEST_PORT: "8050"
       INGEST_LOG_LEVEL: info
-      INGEST_MOCK_MODE: "true"
+      INGEST_MOCK_MODE: "false"
+      INGEST_DOC_SERVICE_BASE_URL: http://document_service:8060
+      INGEST_S3_ENDPOINT: http://minio:9000
+      INGEST_S3_BUCKET: visior-documents
+      INGEST_S3_ACCESS_KEY: minio
+      INGEST_S3_SECRET_KEY: minio123
+      INGEST_S3_SECURE: "false"
+      INGEST_REDIS_URL: redis://redis:6379/0
+      INGEST_EMBEDDING_API_BASE: https://openrouter.ai/api/v1
+      # Вставьте ключ OpenRouter в переменную окружения перед запуском compose:
+      INGEST_EMBEDDING_API_KEY: ${INGEST_SUMMARY_API_KEY}
+      INGEST_EMBEDDING_MODEL: baai/bge-m3
+      INGEST_SUMMARY_API_BASE: https://openrouter.ai/api/v1
+      # Можно использовать тот же ключ, что и для эмбеддингов:
+      INGEST_SUMMARY_API_KEY: ${INGEST_SUMMARY_API_KEY}
+      INGEST_SUMMARY_MODEL: openai/gpt-5-nano
+      INGEST_CHROMA_PATH: /chroma-data
     ports:
       - "8050:8050"
+    depends_on:
+      - minio
+      - minio-setup
+      - chroma
+    volumes:
+      - chroma-data:/chroma-data
     networks:
       - visior
 
@@ -126,11 +158,106 @@ services:
       OBS_PORT: "8085"
       OBS_LOG_LEVEL: info
       OBS_MOCK_MODE: "true"
+      OBS_INGESTION_BASE_URL: http://ingestion_service:8050
+      OBS_DOCUMENT_BASE_URL: http://document_service:8060
     ports:
       - "8085:8085"
+    networks:
+      - visior
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_DB: visior
+      POSTGRES_USER: visior
+      POSTGRES_PASSWORD: visior
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visior"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - visior
+
+  chroma:
+    image: ghcr.io/chroma-core/chroma:latest
+    container_name: chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma-data
+    volumes:
+      - chroma-data:/chroma-data
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - visior
+
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - visior
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - visior
+
+  minio-setup:
+    image: minio/mc:latest
+    container_name: minio_setup
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      for i in $(seq 1 20); do
+        if mc alias set local http://minio:9000 minio minio123 >/dev/null 2>&1; then
+          break;
+        fi;
+        echo 'waiting for minio...';
+        sleep 3;
+      done;
+      mc mb -p local/visior-documents || true
+      "
     networks:
       - visior
 
 networks:
   visior:
     driver: bridge
+
+volumes:
+  minio-data:
+  chroma-data:
+  postgres-data:

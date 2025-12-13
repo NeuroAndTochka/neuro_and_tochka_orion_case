@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+from typing import List, Sequence
+
+import structlog
+
+from ingestion_service.config import Settings
+from ingestion_service.core.parser import DocumentParser
+
+try:  # pragma: no cover - runtime dependency
+    from openai import OpenAI
+except Exception:  # pragma: no cover - fallback if not installed
+    OpenAI = None
+
+
+class Summarizer:
+    """Генератор кратких резюме через OpenAI клиент (поддерживает OpenRouter base_url)."""
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self._mock = settings.mock_mode or not settings.summary_api_base
+        self._logger = structlog.get_logger(__name__)
+        self.system_prompt = (
+            "Сделай короткое русскоязычное резюме секции документа (1-2 предложения). "
+            "Без воды, без списков, только факты."
+        )
+        self.model = settings.summary_model
+        self.max_tokens = 120
+        self.use_roles = True
+        self.timeout = 30.0
+
+        self._client = None
+        if not self._mock and OpenAI:
+            default_headers = {}
+            if settings.summary_referer:
+                default_headers["HTTP-Referer"] = settings.summary_referer
+            if settings.summary_title:
+                default_headers["X-Title"] = settings.summary_title
+            self._client = OpenAI(
+                base_url=settings.summary_api_base,
+                api_key=settings.summary_api_key,
+                default_headers=default_headers or None,
+            )
+
+    def summarize(self, texts: Sequence[str]) -> List[str]:
+        if not texts:
+            return []
+        if self._mock or not self._client:
+            if not self._client and not self._mock:
+                self._logger.warning("summary_fallback", reason="OpenAI client not initialized")
+            return [self._fallback(text) for text in texts]
+
+        results: List[str] = []
+        for text in texts:
+            try:
+                messages = self._build_messages(text)
+                self._logger.debug("summary_request", model=self.model, use_roles=self.use_roles)
+                resp = self._client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=self.max_tokens,
+                    temperature=0.2,
+                    timeout=self.timeout,
+                )
+                content = resp.choices[0].message.content if resp and resp.choices else ""
+                results.append(DocumentParser._clean_text(content or "") or self._fallback(text))
+                self._logger.debug("summary_response", status="ok")
+            except Exception as exc:  # pragma: no cover - network path
+                self._logger.warning("summary_fallback", reason=str(exc))
+                results.append(self._fallback(text))
+        return results
+
+    @staticmethod
+    def _fallback(text: str) -> str:
+        return DocumentParser._clean_text(text)[:200]
+
+    def get_config(self) -> dict:
+        return {
+            "system_prompt": self.system_prompt,
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "use_roles": self.use_roles,
+        }
+
+    def update_config(
+        self,
+        *,
+        system_prompt: str | None = None,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        use_roles: bool | None = None,
+    ) -> dict:
+        if system_prompt is not None:
+            self.system_prompt = system_prompt
+        if model is not None:
+            self.model = model
+        if max_tokens is not None:
+            self.max_tokens = max_tokens
+        if use_roles is not None:
+            self.use_roles = use_roles
+        return self.get_config()
+
+    def _build_messages(self, text: str) -> list[dict]:
+        user_content = text[:4000]
+        if self.use_roles:
+            return [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": user_content},
+            ]
+        return [{"role": "user", "content": f"{self.system_prompt}\n\n{user_content}"}]
