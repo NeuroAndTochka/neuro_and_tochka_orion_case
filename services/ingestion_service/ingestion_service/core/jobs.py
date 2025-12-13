@@ -41,6 +41,8 @@ class JobStore:
     def __init__(self, redis_url: str | None = None, events_stream: str = "ingestion_events"):
         self._redis = None
         self.events_stream = events_stream
+        self.logs_prefix = "ingestion_job_logs"
+        self.max_logs = 50
         if redis_url and redis:
             try:
                 self._redis = redis.from_url(redis_url, decode_responses=True)
@@ -48,6 +50,7 @@ class JobStore:
             except Exception:
                 self._redis = None
         self._memory: dict[str, JobRecord] = {}
+        self._logs_memory: dict[str, list[dict]] = {}
 
     def _set(self, job: JobRecord) -> None:
         if self._redis:
@@ -103,3 +106,25 @@ class JobStore:
     def publish_event(self, payload: dict) -> None:
         if self._redis:
             self._redis.xadd(self.events_stream, {k: json.dumps(v) if isinstance(v, (dict, list)) else v for k, v in payload.items()})
+
+    def append_log(self, job_id: str, entry: dict) -> None:
+        payload = {"timestamp": datetime.utcnow().isoformat(), **entry}
+        if self._redis:
+            key = f"{self.logs_prefix}:{job_id}"
+            self._redis.rpush(key, json.dumps(payload, default=str))
+            self._redis.ltrim(key, -self.max_logs, -1)
+        logs = self._logs_memory.setdefault(job_id, [])
+        logs.append(payload)
+        if len(logs) > self.max_logs:
+            self._logs_memory[job_id] = logs[-self.max_logs :]
+
+    def get_logs(self, job_id: str, limit: int = 50) -> list[dict]:
+        if self._redis:
+            key = f"{self.logs_prefix}:{job_id}"
+            try:
+                raw = self._redis.lrange(key, -limit, -1)
+                return [json.loads(item) for item in raw]
+            except Exception:
+                return []
+        logs = self._logs_memory.get(job_id, [])
+        return logs[-limit:]

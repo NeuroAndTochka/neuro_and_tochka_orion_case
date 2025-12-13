@@ -11,7 +11,7 @@ from ingestion_service.core.storage import StorageClient
 from ingestion_service.core.embedding import EmbeddingClient
 from ingestion_service.core.summarizer import Summarizer
 from ingestion_service.core.vector_store import VectorStore
-from ingestion_service.schemas import EnqueueResponse, StatusPayload
+from ingestion_service.schemas import EnqueueResponse, JobStatusResponse, StatusPayload, SummarizerConfig
 
 router = APIRouter(prefix="/internal/ingestion", tags=["ingestion"])
 
@@ -175,3 +175,95 @@ async def update_status(
         status=ticket.status,
         storage_uri=ticket.storage_uri,
     )
+
+
+@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
+async def get_job(
+    job_id: str,
+    jobs: JobStore = Depends(get_jobs),
+) -> JobStatusResponse:
+    ticket = jobs.get(job_id)
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job_not_found")
+    logs = jobs.get_logs(job_id)
+    return JobStatusResponse(
+        job_id=ticket.job_id,
+        tenant_id=ticket.tenant_id,
+        doc_id=ticket.doc_id,
+        status=ticket.status,
+        storage_uri=ticket.storage_uri,
+        error=ticket.error,
+        logs=logs,
+    )
+
+@router.get("/summarizer/config", response_model=SummarizerConfig)
+async def get_summarizer_config(summarizer: Summarizer = Depends(get_summarizer)) -> SummarizerConfig:
+    return SummarizerConfig(**summarizer.get_config())
+
+
+@router.post("/summarizer/config", response_model=SummarizerConfig)
+async def update_summarizer_config(payload: SummarizerConfig, summarizer: Summarizer = Depends(get_summarizer)) -> SummarizerConfig:
+    updated = summarizer.update_config(
+        system_prompt=payload.system_prompt,
+        model=payload.model,
+        max_tokens=payload.max_tokens,
+        use_roles=payload.use_roles,
+    )
+    return SummarizerConfig(**updated)
+
+
+@router.get("/documents/{doc_id}/tree")
+async def get_document_tree(
+    doc_id: str,
+    vector_store: VectorStore = Depends(get_vector_store),
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.doc_service_base_url:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="document_service_not_configured")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{settings.doc_service_base_url}/internal/documents/{doc_id}",
+                headers={"X-Tenant-ID": tenant_id},
+            )
+            resp.raise_for_status()
+            detail = resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    chunks_meta = vector_store.get_chunks(doc_id, tenant_id) if vector_store else []
+    chunk_map = {}
+    for meta in chunks_meta:
+        cid = meta.get("chunk_id")
+        if not cid and isinstance(meta.get("id"), str) and ":" in meta["id"]:
+            cid = meta["id"].split(":", 1)[1]
+        chunk_map[cid] = meta
+
+    sections = []
+    for sec in detail.get("sections", []):
+        sec_chunks = []
+        for cid in sec.get("chunk_ids") or []:
+            meta = chunk_map.get(cid, {})
+            sec_chunks.append(
+                {
+                    "chunk_id": cid,
+                    "text": meta.get("text"),
+                    "score": meta.get("score"),
+                }
+            )
+        section_copy = dict(sec)
+        section_copy["chunks"] = sec_chunks
+        sections.append(section_copy)
+
+    return {
+        "doc_id": detail.get("doc_id"),
+        "name": detail.get("name"),
+        "status": detail.get("status"),
+        "storage_uri": detail.get("storage_uri"),
+        "pages": detail.get("pages"),
+        "sections": sections,
+        "tags": detail.get("tags", []),
+    }

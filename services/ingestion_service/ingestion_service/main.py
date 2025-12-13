@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import structlog
 
 from fastapi import FastAPI
 
@@ -13,6 +14,7 @@ from ingestion_service.routers import ingestion
 
 settings = get_settings()
 configure_logging(settings.log_level)
+logger = structlog.get_logger(__name__)
 
 
 @asynccontextmanager
@@ -23,6 +25,15 @@ async def lifespan(app: FastAPI):
     app.state.embedding_client = EmbeddingClient(settings)
     app.state.summarizer = Summarizer(settings)
     app.state.vector_store = VectorStore(path=str(settings.chroma_path), enabled=not settings.mock_mode)
+    logger.info(
+        "ingestion_service_started",
+        mock_mode=settings.mock_mode,
+        embedding_endpoint=settings.embedding_api_base,
+        summary_endpoint=settings.summary_api_base,
+        redis_enabled=bool(settings.redis_url),
+        s3_enabled=bool(settings.s3_bucket),
+        vector_store=not settings.mock_mode,
+    )
     yield
 
 

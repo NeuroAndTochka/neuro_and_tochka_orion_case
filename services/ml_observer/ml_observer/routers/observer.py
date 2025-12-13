@@ -144,21 +144,28 @@ async def proxy_ingestion_status(
     job_id = payload.get("job_id")
     if not job_id:
         raise HTTPException(status_code=400, detail="job_id required")
+    override_status = payload.get("status")
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                f"{settings.ingestion_base_url}/internal/ingestion/status",
-                json={"job_id": job_id, "status": payload.get("status", "processing")},
+            if override_status:
+                resp = await client.post(
+                    f"{settings.ingestion_base_url}/internal/ingestion/status",
+                    json={"job_id": job_id, "status": override_status},
+                    headers={"X-Tenant-ID": tenant_id},
+                )
+                resp.raise_for_status()
+            job_resp = await client.get(
+                f"{settings.ingestion_base_url}/internal/ingestion/jobs/{job_id}",
                 headers={"X-Tenant-ID": tenant_id},
             )
-            resp.raise_for_status()
-            data = resp.json()
+            job_resp.raise_for_status()
+            data = job_resp.json()
             return DocumentStatus(
                 doc_id=data["doc_id"],
                 status=data.get("status"),
                 storage_uri=data.get("storage_uri"),
                 experiment_id=None,
-                meta={"job_id": job_id},
+                meta={"job_id": job_id, "logs": data.get("logs", []), "error": data.get("error")},
             )
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
@@ -183,6 +190,72 @@ async def list_documents(
             resp = await client.get(
                 f"{settings.document_base_url}/internal/documents",
                 params=params,
+                headers={"X-Tenant-ID": tenant_id},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/summarizer/config")
+async def get_summarizer_config(
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.ingestion_base_url:
+        raise HTTPException(status_code=503, detail="ingestion_not_configured")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{settings.ingestion_base_url}/internal/ingestion/summarizer/config",
+                headers={"X-Tenant-ID": tenant_id},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/summarizer/config")
+async def update_summarizer_config(
+    payload: dict,
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.ingestion_base_url:
+        raise HTTPException(status_code=503, detail="ingestion_not_configured")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{settings.ingestion_base_url}/internal/ingestion/summarizer/config",
+                json=payload,
+                headers={"X-Tenant-ID": tenant_id},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/documents/{doc_id}/tree")
+async def get_document_tree(
+    doc_id: str,
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.ingestion_base_url:
+        raise HTTPException(status_code=503, detail="ingestion_not_configured")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{settings.ingestion_base_url}/internal/ingestion/documents/{doc_id}/tree",
                 headers={"X-Tenant-ID": tenant_id},
             )
             resp.raise_for_status()

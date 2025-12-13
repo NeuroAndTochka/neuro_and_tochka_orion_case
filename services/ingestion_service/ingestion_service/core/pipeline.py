@@ -120,11 +120,100 @@ def process_file(
             sections=len(sections),
             chunks=len(chunk_pairs),
         )
+        log_entry = {
+            "type": "embedding",
+            "stage": "document",
+            "model": embedding.settings.embedding_model if hasattr(embedding, "settings") else None,
+            "items": 1,
+            "dimensions": len(doc_embedding) if doc_embedding else 0,
+            "status": "ok",
+        }
+        jobs.append_log(ticket.job_id, log_entry)
+        logger.info("model_call", job_id=ticket.job_id, doc_id=ticket.doc_id, tenant_id=ticket.tenant_id, **log_entry)
+
+        jobs.append_log(
+            ticket.job_id,
+            {
+                "type": "embedding_payload",
+                "stage": "document",
+                "input": text,
+            },
+        )
+
+        log_entry = {
+            "type": "embedding",
+            "stage": "sections",
+            "model": embedding.settings.embedding_model if hasattr(embedding, "settings") else None,
+            "items": len(sections),
+            "dimensions": len(section_embeddings[0]) if section_embeddings else 0,
+            "status": "ok",
+        }
+        jobs.append_log(ticket.job_id, log_entry)
+        logger.info("model_call", job_id=ticket.job_id, doc_id=ticket.doc_id, tenant_id=ticket.tenant_id, **log_entry)
+        jobs.append_log(
+            ticket.job_id,
+            {
+                "type": "embedding_payload",
+                "stage": "sections",
+                "input": [s["text"] for s in sections],
+            },
+        )
+        if chunk_embeddings:
+            log_entry = {
+                "type": "embedding",
+                "stage": "chunks",
+                "model": embedding.settings.embedding_model if hasattr(embedding, "settings") else None,
+                "items": len(chunk_embeddings),
+                "dimensions": len(chunk_embeddings[0]) if chunk_embeddings else 0,
+                "status": "ok",
+            }
+            jobs.append_log(ticket.job_id, log_entry)
+            logger.info("model_call", job_id=ticket.job_id, doc_id=ticket.doc_id, tenant_id=ticket.tenant_id, **log_entry)
+            jobs.append_log(
+                ticket.job_id,
+                {
+                    "type": "embedding_payload",
+                    "stage": "chunks",
+                    "input": chunk_texts,
+                },
+            )
 
         # LLM summary для секций
         try:
             section_summaries = summarizer.summarize([s["text"] for s in sections])
+            log_entry = {
+                "type": "summary",
+                "stage": "sections",
+                "model": getattr(summarizer, "model", None),
+                "items": len(section_summaries),
+                "status": "ok",
+                "preview": [s[:200] for s in section_summaries[:3]],
+            }
+            jobs.append_log(ticket.job_id, log_entry)
+            logger.info("model_call", job_id=ticket.job_id, doc_id=ticket.doc_id, tenant_id=ticket.tenant_id, **log_entry)
+            jobs.append_log(
+                ticket.job_id,
+                {
+                    "type": "summary_payload",
+                    "stage": "sections",
+                    "system_prompt": getattr(summarizer, "system_prompt", None),
+                    "requests": [{"section_id": sec["section_id"], "prompt": sec["text"][:4000]} for sec in sections],
+                    "responses": [
+                        {"section_id": sec["section_id"], "summary": summary}
+                        for sec, summary in zip(sections, section_summaries)
+                    ],
+                },
+            )
         except Exception:
+            log_entry = {
+                "type": "summary",
+                "stage": "sections",
+                "model": getattr(summarizer, "model", None),
+                "items": len(sections),
+                "status": "fallback",
+            }
+            jobs.append_log(ticket.job_id, log_entry)
+            logger.info("model_call", job_id=ticket.job_id, doc_id=ticket.doc_id, tenant_id=ticket.tenant_id, **log_entry)
             section_summaries = [DocumentParser._clean_text(s["text"])[:200] for s in sections]
 
         sections_payload = []

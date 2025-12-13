@@ -4,6 +4,7 @@ import hashlib
 from typing import List, Sequence
 
 import httpx
+import structlog
 
 from ingestion_service.config import Settings
 
@@ -12,6 +13,7 @@ class EmbeddingClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._mock = settings.mock_mode or not settings.embedding_api_base
+        self._logger = structlog.get_logger(__name__)
 
     def embed(self, texts: Sequence[str]) -> List[List[float]]:
         if not texts:
@@ -24,7 +26,9 @@ class EmbeddingClient:
         path = "/embeddings" if base.endswith("/v1") else "/v1/embeddings"
         payload = {"model": self.settings.embedding_model, "input": list(texts), "encoding_format": "float"}
         with httpx.Client(base_url=base, timeout=20.0) as client:
+            self._logger.debug("embedding_request", url=base + path, model=self.settings.embedding_model, items=len(texts))
             resp = client.post(path, json=payload, headers=headers)
+            self._logger.debug("embedding_response", status_code=resp.status_code)
             resp.raise_for_status()
             data = resp.json()
         return [item["embedding"] for item in data.get("data", [])]

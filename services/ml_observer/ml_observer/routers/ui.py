@@ -38,6 +38,21 @@ async def ui() -> str:
 
   <div class="row">
     <section>
+      <h3>Настройки summarizer</h3>
+      <label for="sumModel">Model</label>
+      <input id="sumModel" placeholder="openai/gpt-4o-mini" />
+      <label for="sumMaxTokens">Max tokens</label>
+      <input id="sumMaxTokens" type="number" value="120" />
+      <label for="sumPrompt">System prompt</label>
+      <textarea id="sumPrompt">Сделай короткое русскоязычное резюме секции документа (1-2 предложения). Без воды, без списков, только факты.</textarea>
+      <label for="sumUseRoles">Использовать роли (system+user)</label>
+      <input id="sumUseRoles" type="checkbox" checked />
+      <button onclick="loadSummarizerConfig()">Загрузить текущие</button>
+      <button onclick="saveSummarizerConfig()">Сохранить</button>
+      <pre id="sumConfig"></pre>
+    </section>
+
+    <section>
       <h3>Создать эксперимент</h3>
       <label for="expName">Название</label>
       <input id="expName" value="Demo experiment" />
@@ -70,6 +85,7 @@ async def ui() -> str:
       <button onclick="runIngestion()">Отправить в ingestion</button>
       <button onclick="checkIngestionStatus()">Проверить статус</button>
       <pre id="ingestLog"></pre>
+      <pre id="ingestModelLogs">Логи вызовов моделей появятся после проверки статуса</pre>
     </section>
   </div>
 
@@ -104,8 +120,10 @@ async def ui() -> str:
       <label for="docDetailId">doc_id для деталей</label>
       <input id="docDetailId" placeholder="doc_xxx" />
       <button onclick="loadDocumentDetail()">Показать детали</button>
+      <button onclick="loadDocumentTree()">Показать дерево</button>
       <pre id="docsList"></pre>
       <pre id="docDetail"></pre>
+      <pre id="docTree"></pre>
     </section>
   </div>
 
@@ -125,6 +143,25 @@ async def ui() -> str:
       };
       const res = await fetch("/internal/observer/experiments", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
       log("expLog", await res.json());
+    }
+    async function loadSummarizerConfig() {
+      const res = await fetch("/internal/observer/summarizer/config", {headers: headers()});
+      const data = await res.json();
+      document.getElementById("sumModel").value = data.model || "";
+      document.getElementById("sumMaxTokens").value = data.max_tokens || 120;
+      document.getElementById("sumPrompt").value = data.system_prompt || "";
+      document.getElementById("sumUseRoles").checked = data.use_roles !== false;
+      log("sumConfig", data);
+    }
+    async function saveSummarizerConfig() {
+      const payload = {
+        model: document.getElementById("sumModel").value || null,
+        max_tokens: Number(document.getElementById("sumMaxTokens").value || 0) || null,
+        system_prompt: document.getElementById("sumPrompt").value || null,
+        use_roles: document.getElementById("sumUseRoles").checked
+      };
+      const res = await fetch("/internal/observer/summarizer/config", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
+      log("sumConfig", await res.json());
     }
     async function uploadDoc() {
       const payload = {
@@ -168,7 +205,11 @@ async def ui() -> str:
         headers: {"X-Tenant-ID": document.getElementById("tenant").value},
         body: fd
       });
-      log("ingestLog", await res.json());
+      const data = await res.json();
+      log("ingestLog", data);
+      if (data.job_id) {
+        document.getElementById("ingestStatusJob").value = data.job_id;
+      }
     }
 
     async function checkIngestionStatus() {
@@ -178,7 +219,10 @@ async def ui() -> str:
         headers: {"Content-Type": "application/json", "X-Tenant-ID": document.getElementById("tenant").value},
         body: JSON.stringify({job_id: jobId})
       });
-      log("ingestLog", await res.json());
+      const data = await res.json();
+      log("ingestLog", data);
+      const logs = (data.meta && data.meta.logs) ? data.meta.logs : [];
+      log("ingestModelLogs", logs.length ? logs : {info: "Нет логов модели"});
     }
 
     async function loadDocuments() {
@@ -191,6 +235,13 @@ async def ui() -> str:
       if (!docId) { log("docDetail", {error: "Укажите doc_id"}); return; }
       const res = await fetch(`/internal/observer/documents/${docId}/detail`, {headers: headers()});
       log("docDetail", await res.json());
+    }
+
+    async function loadDocumentTree() {
+      const docId = document.getElementById("docDetailId").value;
+      if (!docId) { log("docTree", {error: "Укажите doc_id"}); return; }
+      const res = await fetch(`/internal/observer/documents/${docId}/tree`, {headers: headers()});
+      log("docTree", await res.json());
     }
   </script>
 </body>

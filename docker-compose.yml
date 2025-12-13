@@ -117,17 +117,21 @@ services:
       INGEST_REDIS_URL: redis://redis:6379/0
       INGEST_EMBEDDING_API_BASE: https://openrouter.ai/api/v1
       # Вставьте ключ OpenRouter в переменную окружения перед запуском compose:
-      INGEST_EMBEDDING_API_KEY: sk-....
+      INGEST_EMBEDDING_API_KEY: ${INGEST_SUMMARY_API_KEY}
       INGEST_EMBEDDING_MODEL: baai/bge-m3
       INGEST_SUMMARY_API_BASE: https://openrouter.ai/api/v1
       # Можно использовать тот же ключ, что и для эмбеддингов:
-      INGEST_SUMMARY_API_KEY: sk-....
+      INGEST_SUMMARY_API_KEY: ${INGEST_SUMMARY_API_KEY}
       INGEST_SUMMARY_MODEL: openai/gpt-5-nano
+      INGEST_CHROMA_PATH: /chroma-data
     ports:
       - "8050:8050"
     depends_on:
       - minio
       - minio-setup
+      - chroma
+    volumes:
+      - chroma-data:/chroma-data
     networks:
       - visior
 
@@ -172,6 +176,12 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visior"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - visior
 
@@ -185,6 +195,12 @@ services:
       - chroma-data:/chroma-data
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - visior
 
@@ -193,6 +209,12 @@ services:
     container_name: redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     networks:
       - visior
 
