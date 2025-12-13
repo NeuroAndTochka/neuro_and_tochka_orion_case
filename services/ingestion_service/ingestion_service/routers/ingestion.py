@@ -2,7 +2,17 @@ import uuid
 from datetime import datetime
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 
 from ingestion_service.config import Settings
 from ingestion_service.core.jobs import JobRecord, JobStore
@@ -11,7 +21,12 @@ from ingestion_service.core.storage import StorageClient
 from ingestion_service.core.embedding import EmbeddingClient
 from ingestion_service.core.summarizer import Summarizer
 from ingestion_service.core.vector_store import VectorStore
-from ingestion_service.schemas import EnqueueResponse, JobStatusResponse, StatusPayload, SummarizerConfig
+from ingestion_service.schemas import (
+    EnqueueResponse,
+    JobStatusResponse,
+    StatusPayload,
+    SummarizerConfig,
+)
 
 router = APIRouter(prefix="/internal/ingestion", tags=["ingestion"])
 
@@ -61,7 +76,9 @@ def get_summarizer(request: Request) -> Summarizer:
 def get_tenant_id(request: Request) -> str:
     tenant_id = request.headers.get("X-Tenant-ID")
     if not tenant_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing X-Tenant-ID header")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Missing X-Tenant-ID header"
+        )
     return tenant_id
 
 
@@ -150,7 +167,9 @@ async def update_status(
     try:
         ticket = jobs.update(payload.job_id, status=payload.status, error=payload.error)
     except KeyError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job_not_found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="job_not_found"
+        )
 
     if settings.doc_service_base_url:
         try:
@@ -184,7 +203,9 @@ async def get_job(
 ) -> JobStatusResponse:
     ticket = jobs.get(job_id)
     if not ticket:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job_not_found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="job_not_found"
+        )
     logs = jobs.get_logs(job_id)
     return JobStatusResponse(
         job_id=ticket.job_id,
@@ -196,13 +217,18 @@ async def get_job(
         logs=logs,
     )
 
+
 @router.get("/summarizer/config", response_model=SummarizerConfig)
-async def get_summarizer_config(summarizer: Summarizer = Depends(get_summarizer)) -> SummarizerConfig:
+async def get_summarizer_config(
+    summarizer: Summarizer = Depends(get_summarizer),
+) -> SummarizerConfig:
     return SummarizerConfig(**summarizer.get_config())
 
 
 @router.post("/summarizer/config", response_model=SummarizerConfig)
-async def update_summarizer_config(payload: SummarizerConfig, summarizer: Summarizer = Depends(get_summarizer)) -> SummarizerConfig:
+async def update_summarizer_config(
+    payload: SummarizerConfig, summarizer: Summarizer = Depends(get_summarizer)
+) -> SummarizerConfig:
     updated = summarizer.update_config(
         system_prompt=payload.system_prompt,
         model=payload.model,
@@ -220,7 +246,10 @@ async def get_document_tree(
     tenant_id: str = Depends(get_tenant_id),
 ):
     if not settings.doc_service_base_url:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="document_service_not_configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="document_service_not_configured",
+        )
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
@@ -230,7 +259,9 @@ async def get_document_tree(
             resp.raise_for_status()
             detail = resp.json()
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        raise HTTPException(
+            status_code=exc.response.status_code, detail=exc.response.text
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
