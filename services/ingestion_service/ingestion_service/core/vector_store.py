@@ -11,10 +11,13 @@ except Exception:
 class VectorStore:
     """Wrapper над ChromaDB с in-memory fallback."""
 
-    def __init__(self, path: str, enabled: bool = True):
+    def __init__(self, path: str, host: str | None = None, enabled: bool = True):
         self.enabled = enabled and chromadb is not None
         if self.enabled:
-            client = chromadb.PersistentClient(path=path)
+            if host:
+                client = chromadb.HttpClient(host=host)  # type: ignore[arg-type]
+            else:
+                client = chromadb.PersistentClient(path=path)
             self.doc_collection = client.get_or_create_collection("ingestion_docs")
             self.section_collection = client.get_or_create_collection("ingestion_sections")
             self.chunk_collection = client.get_or_create_collection("ingestion_chunks")

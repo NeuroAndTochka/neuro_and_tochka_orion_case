@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     chunk_overlap: int = 200
 
     chroma_path: Path = Path("./.chroma_ingestion")
+    chroma_host: str | None = None
 
 
 @lru_cache

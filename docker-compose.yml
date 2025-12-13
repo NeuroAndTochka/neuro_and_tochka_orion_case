@@ -123,15 +123,13 @@ services:
       # Можно использовать тот же ключ, что и для эмбеддингов:
       INGEST_SUMMARY_API_KEY: ${INGEST_SUMMARY_API_KEY}
       INGEST_SUMMARY_MODEL: openai/gpt-5-nano
-      INGEST_CHROMA_PATH: /chroma-data
+      INGEST_CHROMA_HOST: http://chroma:8000
     ports:
       - "8050:8050"
     depends_on:
       - minio
       - minio-setup
       - chroma
-    volumes:
-      - chroma-data:/chroma-data
     networks:
       - visior
 
@@ -143,7 +141,15 @@ services:
       RETR_HOST: 0.0.0.0
       RETR_PORT: "8040"
       RETR_LOG_LEVEL: info
-      RETR_MOCK_MODE: "true"
+      RETR_MOCK_MODE: "false"
+      RETR_VECTOR_BACKEND: chroma
+      RETR_CHROMA_HOST: http://chroma:8000
+      RETR_CHROMA_COLLECTION: ingestion_chunks
+      RETR_MAX_RESULTS: "5"
+      RETR_TOPK_PER_DOC: "2"
+      RETR_EMBEDDING_API_BASE: https://openrouter.ai/api/v1
+      RETR_EMBEDDING_API_KEY: ${INGEST_SUMMARY_API_KEY}
+      RETR_EMBEDDING_MODEL: baai/bge-m3
     ports:
       - "8040:8040"
     networks:

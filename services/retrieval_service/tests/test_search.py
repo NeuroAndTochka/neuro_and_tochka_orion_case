@@ -13,3 +13,26 @@ def test_search_returns_hits():
         data = resp.json()
         assert data["hits"]
         assert data["hits"][0]["doc_id"] == "doc_1"
+
+
+def test_search_respects_max_results_cap():
+    with TestClient(app) as client:
+        resp = client.post(
+            "/internal/retrieval/search",
+            json={"query": "s", "tenant_id": "tenant_1", "max_results": 1},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["hits"]) == 1
+
+
+def test_search_filters_doc_ids():
+    with TestClient(app) as client:
+        resp = client.post(
+            "/internal/retrieval/search",
+            json={"query": "sso", "tenant_id": "tenant_1", "doc_ids": ["doc_1"]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # sso текст есть только в doc_2, поэтому при фильтре doc_1 — пусто
+        assert data["hits"] == []

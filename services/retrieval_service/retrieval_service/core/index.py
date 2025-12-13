@@ -36,11 +36,27 @@ class InMemoryIndex:
                 page_start=3,
                 page_end=5,
             ),
+            RetrievalHit(
+                doc_id="doc_2",
+                section_id="sec_other",
+                chunk_id="chunk_3",
+                text="SSO configuration steps",
+                score=0.75,
+                page_start=1,
+                page_end=1,
+            ),
         ]
 
     def search(self, query: RetrievalQuery) -> List[RetrievalHit]:
         q = query.query.lower()
-        results = [hit for hit in self.documents if q in hit.text.lower() and (not query.doc_ids or hit.doc_id in (query.doc_ids or []))]
+        allowed_docs: Optional[Iterable[str]] = query.doc_ids
+        if not allowed_docs and query.filters and query.filters.doc_ids:
+            allowed_docs = query.filters.doc_ids
+        results = [
+            hit
+            for hit in self.documents
+            if q in hit.text.lower() and (not allowed_docs or hit.doc_id in allowed_docs)
+        ]
         return results[: query.max_results or len(results)]
 
 
@@ -55,19 +71,21 @@ class ChromaIndex:
         self._logger = structlog.get_logger(__name__)
 
     def _build_where(self, query: RetrievalQuery) -> dict:
-        where = {"tenant_id": query.tenant_id}
+        conditions = [{"tenant_id": query.tenant_id}]
         if query.doc_ids:
-            where["doc_id"] = {"$in": query.doc_ids}
+            conditions.append({"doc_id": {"$in": query.doc_ids}})
         if query.section_ids:
-            where["section_id"] = {"$in": query.section_ids}
+            conditions.append({"section_id": {"$in": query.section_ids}})
         if query.filters:
             if query.filters.product:
-                where["product"] = query.filters.product
+                conditions.append({"product": query.filters.product})
             if query.filters.version:
-                where["version"] = query.filters.version
+                conditions.append({"version": query.filters.version})
             if query.filters.tags:
-                where["tags"] = {"$in": query.filters.tags}
-        return where
+                conditions.append({"tags": {"$in": query.filters.tags}})
+        if len(conditions) == 1:
+            return conditions[0]
+        return {"$and": conditions}
 
     def search(self, query: RetrievalQuery) -> List[RetrievalHit]:
         where = self._build_where(query)
@@ -112,6 +130,8 @@ class ChromaIndex:
             limited.append(hit)
             if len(limited) >= max_results:
                 break
+        if not limited:
+            limited = self._fallback_metadata_search(query, where, max_results)
         self._logger.info(
             "retrieval_chroma_results",
             tenant_id=query.tenant_id,
@@ -120,3 +140,36 @@ class ChromaIndex:
             total_raw=len(hits),
         )
         return limited
+
+    def _fallback_metadata_search(self, query: RetrievalQuery, where: dict, max_results: int) -> List[RetrievalHit]:
+        try:
+            res = self.collection.get(where=where, include=["metadatas", "ids"], limit=500)
+        except Exception as exc:  # pragma: no cover - runtime path
+            self._logger.warning("retrieval_fallback_failed", error=str(exc))
+            return []
+        ids = res.get("ids") or []
+        metas = res.get("metadatas") or []
+        if not ids or not metas:
+            return []
+        q = query.query.lower()
+        hits: List[RetrievalHit] = []
+        for cid, meta in zip(ids, metas):
+            if not meta:
+                continue
+            text = (meta.get("text") or "").lower()
+            if q in text:
+                hits.append(
+                    RetrievalHit(
+                        doc_id=meta.get("doc_id", ""),
+                        section_id=meta.get("section_id"),
+                        chunk_id=meta.get("chunk_id") or cid,
+                        text=meta.get("text") or "",
+                        score=0.1,
+                        page_start=meta.get("page_start"),
+                        page_end=meta.get("page_end"),
+                    )
+                )
+        hits = hits[:max_results]
+        if hits:
+            self._logger.info("retrieval_metadata_fallback_used", hits=len(hits))
+        return hits

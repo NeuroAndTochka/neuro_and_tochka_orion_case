@@ -43,4 +43,10 @@ async def health() -> dict[str, str]:
     status = {"status": "ok"}
     if not settings.mock_mode and settings.vector_backend.lower() == "chroma":
         status["backend"] = "chroma"
+        try:
+            # ping collection
+            _ = app.state.index.collection.count()  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - runtime path
+            status["status"] = "degraded"
+            status["error"] = str(exc)
     return status

@@ -108,7 +108,11 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.embedding_client = EmbeddingClient(settings)
     app.state.summarizer = Summarizer(settings)
-    app.state.vector_store = VectorStore(path=str(settings.chroma_path), enabled=not settings.mock_mode)
+    app.state.vector_store = VectorStore(
+        path=str(settings.chroma_path),
+        host=str(settings.chroma_host) if settings.chroma_host else None,
+        enabled=not settings.mock_mode,
+    )
     app.state.queue = IngestionQueue(settings.redis_url, settings.queue_name)
     app.state.worker_tasks: list[asyncio.Task] = []
     if settings.worker_count > 0:
