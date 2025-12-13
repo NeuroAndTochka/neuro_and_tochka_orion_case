@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from retrieval_service.core.index import InMemoryIndex
+from retrieval_service.core.index import InMemoryIndex  # noqa
 from retrieval_service.schemas import RetrievalQuery, RetrievalResponse
 from retrieval_service.config import Settings
 
@@ -22,7 +22,11 @@ def get_settings(request: Request) -> Settings:
 
 
 @router.post("/search", response_model=RetrievalResponse)
-async def search(query: RetrievalQuery, index=Depends(get_index), settings: Settings = Depends(get_settings)) -> RetrievalResponse:
+async def search(
+    query: RetrievalQuery,
+    index=Depends(get_index),
+    settings: Settings = Depends(get_settings),
+) -> RetrievalResponse:
     requested = query.max_results or settings.max_results
     max_cap = max(1, settings.max_results)
     query.max_results = min(requested, max_cap, 50)

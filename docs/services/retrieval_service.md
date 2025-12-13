@@ -42,4 +42,4 @@
 ## Архитектура (предложение)
 - FastAPI (`services/retrieval_service`), адаптер backend в `core/index.py` (интерфейс + Chroma реализация + InMemory).
 - Конфиг через `RETR_*`, логирование через structlog.
-- Документация: обновить спецификацию `docs/retrieval_service_spec.md` после реализации. 
+- Документация: обновить спецификацию `docs/retrieval_service_spec.md` после реализации.

@@ -9,6 +9,7 @@ from retrieval_service.core.embedding import EmbeddingClient
 settings = get_settings()
 configure_logging(settings.log_level)
 
+
 def build_index():
     if settings.mock_mode:
         return InMemoryIndex()
