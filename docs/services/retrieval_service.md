@@ -7,7 +7,7 @@
 1. **API**
    - `POST /internal/retrieval/search`
      - Request: `query: str`, `tenant_id: str`, `max_results?: int=5`, `filters?: {product?, version?, tags?, doc_ids?, section_ids?}`, `doc_ids?: list[str]`, `section_ids?: list[str]`.
-     - Response: `{"hits": [{doc_id, section_id, chunk_id, text, score, page_start, page_end, meta?}]}`. `score` по убыванию, стабильные ID.
+     - Response: `{"hits": [...], "steps": {"docs": [...], "sections": [...], "chunks": [...]}}` (steps опционально). `score` по убыванию, стабильные ID.
    - `/health` — ok + проверка доступности backend.
 2. **Данные и backend**
    - Векторное хранилище: адаптер с интерфейсом `search(query: RetrievalQuery) -> list[RetrievalHit]`. Базовая реализация — Chroma (использует коллекции, наполняемые ingestion_service). Поддержать мок-режим (in-memory список).

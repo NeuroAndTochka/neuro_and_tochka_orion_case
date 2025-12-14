@@ -286,7 +286,13 @@ def process_file(
 
         # vector store запись
         if vector_store:
-            vector_store.upsert_document(ticket.doc_id, ticket.tenant_id, doc_embedding, {"title": meta.get("title")})
+            doc_title = meta.get("title") or ticket.doc_id
+            vector_store.upsert_document(
+                ticket.doc_id,
+                ticket.tenant_id,
+                doc_embedding,
+                {"title": doc_title},
+            )
             vector_store.upsert_sections(ticket.doc_id, ticket.tenant_id, section_embeddings, sections_payload)
             if chunk_embeddings:
                 vector_store.upsert_chunks(ticket.doc_id, ticket.tenant_id, chunk_embeddings, chunk_pairs)

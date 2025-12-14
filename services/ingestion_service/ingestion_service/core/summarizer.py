@@ -48,7 +48,9 @@ class Summarizer:
             return []
         if self._mock or not self._client:
             if not self._client and not self._mock:
-                self._logger.warning("summary_fallback", reason="OpenAI client not initialized")
+                self._logger.warning(
+                    "summary_fallback", reason="OpenAI client not initialized"
+                )
             self._logger.info("summary_mock", items=len(texts), model=self.model)
             return [self._fallback(text) for text in texts]
 
@@ -66,20 +68,38 @@ class Summarizer:
                 resp = self._client.chat.completions.create(
                     model=self.model,
                     messages=messages,
-                    max_tokens=self.max_tokens,
-                    temperature=0.2,
-                    timeout=self.timeout,
+                    # max_tokens=self.max_tokens,
+                    # temperature=0.2,
+                    # timeout=self.timeout,
                 )
-                content = resp.choices[0].message.content if resp and resp.choices else ""
-                latency_ms = int((time.perf_counter() - started) * 1000)
-                results.append(DocumentParser._clean_text(content or "") or self._fallback(text))
+                raw_content = (
+                    resp.choices[0].message.content if resp and resp.choices else ""
+                )
                 self._logger.info(
-                    "summary_response",
-                    status="ok",
-                    model=self.model,
-                    latency_ms=latency_ms,
-                    completion_chars=len(content or ""),
+                    "summary_raw_content", model=self.model, raw=raw_content
                 )
+                extracted = self._extract_text(raw_content)
+                cleaned = DocumentParser._clean_text(extracted)
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                if not cleaned:
+                    fallback_text = self._fallback(text)
+                    results.append(fallback_text)
+                    self._logger.warning(
+                        "summary_empty_response",
+                        model=self.model,
+                        latency_ms=latency_ms,
+                        completion_chars=len(extracted or ""),
+                        fallback_chars=len(fallback_text),
+                    )
+                else:
+                    results.append(cleaned)
+                    self._logger.info(
+                        "summary_response",
+                        status="ok",
+                        model=self.model,
+                        latency_ms=latency_ms,
+                        completion_chars=len(cleaned),
+                    )
             except Exception as exc:  # pragma: no cover - network path
                 self._logger.warning(
                     "summary_fallback",
@@ -128,3 +148,25 @@ class Summarizer:
                 {"role": "user", "content": user_content},
             ]
         return [{"role": "user", "content": f"{self.system_prompt}\n\n{user_content}"}]
+
+    @staticmethod
+    def _extract_text(content) -> str:
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    text = block.get("text") or block.get("output_text") or ""
+                    if isinstance(text, str):
+                        parts.append(text)
+                elif hasattr(block, "text"):
+                    text_val = getattr(block, "text", "")
+                    if isinstance(text_val, str):
+                        parts.append(text_val)
+            return "\n".join(parts)
+        if hasattr(content, "text") and isinstance(getattr(content, "text"), str):
+            return getattr(content, "text")
+        return ""

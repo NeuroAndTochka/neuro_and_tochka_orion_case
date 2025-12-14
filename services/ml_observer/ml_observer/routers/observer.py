@@ -408,3 +408,47 @@ async def retrieval_search(
         raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/retrieval/config")
+async def get_retrieval_config(
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.retrieval_base_url:
+        raise HTTPException(status_code=503, detail="retrieval_not_configured")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{settings.retrieval_base_url}/internal/retrieval/config",
+                headers={"X-Tenant-ID": tenant_id},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/retrieval/config")
+async def update_retrieval_config(
+    payload: dict,
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.retrieval_base_url:
+        raise HTTPException(status_code=503, detail="retrieval_not_configured")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{settings.retrieval_base_url}/internal/retrieval/config",
+                json=payload,
+                headers={"X-Tenant-ID": tenant_id},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))

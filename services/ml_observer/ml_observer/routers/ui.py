@@ -12,44 +12,84 @@ async def ui() -> str:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ML Observer Dashboard</title>
+  <title>ML Observer — Console</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; background: #f5f7fb; color: #111; }
-    h1 { margin-bottom: 8px; }
-    section { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; }
-    label { display: block; margin: 6px 0 2px; font-weight: 600; }
-    input, textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-    button { margin-top: 8px; padding: 8px 12px; background: #0057ff; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-    button:hover { background: #0040c1; }
-    pre { background: #0b1021; color: #d7e3ff; padding: 12px; border-radius: 6px; overflow: auto; }
-    .row { display: grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap: 12px; }
+    :root {
+      --bg: #0c0f14;
+      --panel: #111722;
+      --accent: #10a37f;
+      --text: #e8eaed;
+      --muted: #9aa0a6;
+      --border: #1f2937;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: "Inter", Arial, sans-serif; margin: 0; background: radial-gradient(circle at 20% 20%, #102341, #0c0f14 50%), #0c0f14; color: var(--text); padding: 24px; }
+    h1 { margin: 0 0 4px; }
+    h3 { margin: 0 0 8px; }
+    .grid { display: grid; gap: 16px; }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
+    section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.35); }
+    label { display: block; margin: 6px 0 2px; font-weight: 600; color: var(--muted); }
+    input, textarea, select { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: #0b1320; color: var(--text); }
+    textarea { min-height: 80px; }
+    button { margin-top: 10px; padding: 10px 14px; background: linear-gradient(135deg, #12b886, #0d9d74); color: #fff; border: none; border-radius: 10px; cursor: pointer; font-weight: 700; letter-spacing: 0.2px; }
+    button:hover { filter: brightness(1.08); }
+    pre { background: #0b0f1a; color: #cde3ff; padding: 12px; border-radius: 10px; border: 1px solid #111827; overflow: auto; max-height: 320px; }
+    .title-row { display: flex; align-items: baseline; gap: 8px; }
+    .pill { background: #132033; padding: 4px 10px; border-radius: 999px; color: var(--muted); font-size: 12px; border: 1px solid var(--border); }
+    .row-flex { display: flex; gap: 12px; flex-wrap: wrap; }
+    .small { font-size: 12px; color: var(--muted); }
   </style>
 </head>
 <body>
-  <h1>ML Observer Dashboard</h1>
-  <p>Быстрый мониторинг и ручной запуск действий. Заголовок tenant задаётся ниже.</p>
+  <div class="title-row">
+    <h1>ML Observer</h1><span class="pill">OpenAI-style console</span>
+  </div>
+  <p class="small">Быстрые проверки ingestion / retrieval. Tenant задаётся ниже.</p>
 
-  <section>
-    <label for="tenant">X-Tenant-ID</label>
-    <input id="tenant" value="observer_tenant" />
-    <button onclick="checkHealth()">Проверить health</button>
-    <pre id="healthLog">Нажмите "Проверить health"</pre>
-  </section>
-
-  <div class="row">
+  <div class="grid grid-3">
     <section>
-      <h3>Настройки summarizer</h3>
+      <label for="tenant">X-Tenant-ID</label>
+      <input id="tenant" value="observer_tenant" />
+      <div class="row-flex">
+        <button onclick="checkHealth()">Health</button>
+        <button onclick="loadDocuments()">Docs</button>
+        <button onclick="loadRetrievalConfig()">Load Retrieval cfg</button>
+      </div>
+      <pre id="healthLog">...</pre>
+    </section>
+
+    <section>
+      <h3>Upload документ</h3>
+      <label for="ingestFile">Файл</label>
+      <input id="ingestFile" type="file" />
+      <label for="docId">doc_id</label>
+      <input id="docId" placeholder="doc_xxx" />
+      <label for="docName">name</label>
+      <input id="docName" placeholder="Lab 06" />
+      <button onclick="runIngestion()">Отправить</button>
+      <label for="ingestStatusJob">job_id</label>
+      <input id="ingestStatusJob" placeholder="job_xxx" />
+      <button onclick="checkIngestionStatus()">Статус</button>
+      <pre id="ingestLog">...</pre>
+      <pre id="ingestModelLogs">Логи модели</pre>
+    </section>
+
+    <section>
+      <h3>Summarizer</h3>
       <label for="sumModel">Model</label>
       <input id="sumModel" placeholder="openai/gpt-4o-mini" />
       <label for="sumMaxTokens">Max tokens</label>
       <input id="sumMaxTokens" type="number" value="120" />
       <label for="sumPrompt">System prompt</label>
-      <textarea id="sumPrompt">Сделай короткое русскоязычное резюме секции документа (1-2 предложения). Без воды, без списков, только факты.</textarea>
-      <label for="sumUseRoles">Использовать роли (system+user)</label>
-      <input id="sumUseRoles" type="checkbox" checked />
-      <button onclick="loadSummarizerConfig()">Загрузить текущие</button>
-      <button onclick="saveSummarizerConfig()">Сохранить</button>
-      <pre id="sumConfig"></pre>
+      <textarea id="sumPrompt">Сделай короткое резюме.</textarea>
+      <label><input id="sumUseRoles" type="checkbox" checked /> use roles</label>
+      <div class="row-flex">
+        <button onclick="loadSummarizerConfig()">Загрузить</button>
+        <button onclick="saveSummarizerConfig()">Сохранить</button>
+      </div>
+      <pre id="sumConfig">...</pre>
     </section>
 
     <section>
@@ -58,59 +98,11 @@ async def ui() -> str:
       <input id="chunkSize" type="number" value="2048" />
       <label for="chunkOverlap">Overlap (chars)</label>
       <input id="chunkOverlap" type="number" value="200" />
-      <button onclick="loadChunkingConfig()">Загрузить текущие</button>
-      <button onclick="saveChunkingConfig()">Сохранить</button>
-      <pre id="chunkConfig"></pre>
-    </section>
-
-    <section>
-      <h3>Создать эксперимент</h3>
-      <label for="expName">Название</label>
-      <input id="expName" value="Demo experiment" />
-      <label for="expDesc">Описание</label>
-      <textarea id="expDesc">Test run</textarea>
-      <label for="expParams">Params (JSON)</label>
-      <textarea id="expParams">{}</textarea>
-      <button onclick="createExperiment()">Создать</button>
-      <pre id="expLog"></pre>
-    </section>
-
-    <section>
-      <h3>Upload документа (mock)</h3>
-      <label for="docId">doc_id</label>
-      <input id="docId" value="doc_demo" />
-      <label for="docName">name</label>
-      <input id="docName" value="Demo Doc" />
-      <label for="docExp">experiment_id (опц.)</label>
-      <input id="docExp" placeholder="exp_id" />
-      <button onclick="uploadDoc()">Отправить</button>
-      <pre id="docLog"></pre>
-    </section>
-
-    <section>
-      <h3>Запуск ingestion</h3>
-      <label for="ingestFile">Файл</label>
-      <input id="ingestFile" type="file" />
-      <label for="ingestStatusJob">job_id (для статуса)</label>
-      <input id="ingestStatusJob" placeholder="job_id" />
-      <button onclick="runIngestion()">Отправить в ingestion</button>
-      <button onclick="checkIngestionStatus()">Проверить статус</button>
-      <pre id="ingestLog"></pre>
-      <pre id="ingestModelLogs">Логи вызовов моделей появятся после проверки статуса</pre>
-    </section>
-  </div>
-
-  <div class="row">
-    <section>
-      <h3>Retrieval run (mock)</h3>
-      <label for="queries">Queries (через ;) </label>
-      <input id="queries" value="ldap guide; sso" />
-      <label for="topk">top_k</label>
-      <input id="topk" type="number" value="3" />
-      <label for="retrExp">experiment_id (опц.)</label>
-      <input id="retrExp" placeholder="exp_id" />
-      <button onclick="runRetrieval()">Запустить</button>
-      <pre id="retrLog"></pre>
+      <div class="row-flex">
+        <button onclick="loadChunkingConfig()">Загрузить</button>
+        <button onclick="saveChunkingConfig()">Сохранить</button>
+      </div>
+      <pre id="chunkConfig">...</pre>
     </section>
 
     <section>
@@ -123,32 +115,59 @@ async def ui() -> str:
       <input id="retrDocIds" placeholder="doc_1,doc_2" />
       <label for="retrFilters">filters (JSON)</label>
       <textarea id="retrFilters">{}</textarea>
-      <button onclick="runRetrievalBackend()">Выполнить</button>
-      <pre id="retrBackendLog"></pre>
+      <button onclick="runRetrievalBackend()">Поиск</button>
+      <pre id="retrBackendLog">...</pre>
     </section>
 
     <section>
-      <h3>LLM dry-run (mock)</h3>
-      <label for="prompt">Prompt</label>
-      <textarea id="prompt">Explain LDAP</textarea>
-      <label for="context">Context (строки через \\n)</label>
-      <textarea id="context">LDAP is ...\nUsed for directory services.</textarea>
-      <label for="llmExp">experiment_id (опц.)</label>
-      <input id="llmExp" placeholder="exp_id" />
-      <button onclick="runLLM()">Запустить</button>
-      <pre id="llmLog"></pre>
+      <h3>Retrieval config</h3>
+      <label for="docTopK">doc_top_k</label>
+      <input id="docTopK" type="number" value="5" />
+      <label for="sectionTopK">section_top_k</label>
+      <input id="sectionTopK" type="number" value="10" />
+      <label for="chunkTopK">chunk_top_k</label>
+      <input id="chunkTopK" type="number" value="20" />
+      <label for="maxResults">max_results</label>
+      <input id="maxResults" type="number" value="5" />
+      <label for="topkPerDoc">topk_per_doc</label>
+      <input id="topkPerDoc" type="number" value="0" />
+      <label for="minScore">min_score</label>
+      <input id="minScore" type="number" step="0.01" />
+      <label><input id="enableFilters" type="checkbox" /> enable_filters</label>
+      <label><input id="rerankEnabled" type="checkbox" /> rerank_enabled</label>
+      <label for="rerankModel">rerank_model</label>
+      <input id="rerankModel" placeholder="gpt-4o-mini" />
+      <label for="rerankTopN">rerank_top_n</label>
+      <input id="rerankTopN" type="number" value="5" />
+      <div class="row-flex">
+        <button onclick="loadRetrievalConfig()">Load</button>
+        <button onclick="saveRetrievalConfig()">Save</button>
+      </div>
+      <pre id="retrConfigLog">...</pre>
     </section>
 
     <section>
-      <h3>Документы в БД</h3>
-      <button onclick="loadDocuments()">Обновить список</button>
-      <label for="docDetailId">doc_id для деталей</label>
+      <h3>Документы</h3>
+      <label for="docDetailId">doc_id</label>
       <input id="docDetailId" placeholder="doc_xxx" />
-      <button onclick="loadDocumentDetail()">Показать детали</button>
-      <button onclick="loadDocumentTree()">Показать дерево</button>
-      <pre id="docsList"></pre>
-      <pre id="docDetail"></pre>
-      <pre id="docTree"></pre>
+      <div class="row-flex">
+        <button onclick="loadDocumentDetail()">Детали</button>
+        <button onclick="loadDocumentTree()">Дерево</button>
+      </div>
+      <pre id="docsList">...</pre>
+      <pre id="docDetail">...</pre>
+      <pre id="docTree">...</pre>
+    </section>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:16px;">
+    <section>
+      <h3>Retrieval steps</h3>
+      <pre id="retrSteps">...</pre>
+    </section>
+    <section>
+      <h3>Workflow Trace</h3>
+      <pre id="workflow">docs → sections → chunks</pre>
     </section>
   </div>
 
@@ -159,15 +178,6 @@ async def ui() -> str:
     async function checkHealth() {
       const res = await fetch("/health");
       log("healthLog", await res.json());
-    }
-    async function createExperiment() {
-      const payload = {
-        name: document.getElementById("expName").value,
-        description: document.getElementById("expDesc").value,
-        params: JSON.parse(document.getElementById("expParams").value || "{}")
-      };
-      const res = await fetch("/internal/observer/experiments", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
-      log("expLog", await res.json());
     }
     async function loadSummarizerConfig() {
       const res = await fetch("/internal/observer/summarizer/config", {headers: headers()});
@@ -203,57 +213,9 @@ async def ui() -> str:
       const res = await fetch("/internal/observer/chunking/config", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
       log("chunkConfig", await res.json());
     }
-    async function uploadDoc() {
-      const payload = {
-        doc_id: document.getElementById("docId").value,
-        name: document.getElementById("docName").value,
-        experiment_id: document.getElementById("docExp").value || null
-      };
-      const res = await fetch("/internal/observer/documents/upload", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
-      log("docLog", await res.json());
-    }
-    async function runRetrieval() {
-      const qs = (document.getElementById("queries").value || "").split(";").map(s => s.trim()).filter(Boolean);
-      const payload = {
-        queries: qs,
-        top_k: Number(document.getElementById("topk").value || 3),
-        experiment_id: document.getElementById("retrExp").value || null
-      };
-      const res = await fetch("/internal/observer/retrieval/run", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
-      log("retrLog", await res.json());
-    }
-    async function runRetrievalBackend() {
-      const docIds = (document.getElementById("retrDocIds").value || "")
-        .split(",")
-        .map(s => s.trim())
-        .filter(Boolean);
-      let filters = {};
-      try { filters = JSON.parse(document.getElementById("retrFilters").value || "{}"); } catch (e) { filters = {}; }
-      const payload = {
-        query: document.getElementById("retrQuery").value || "",
-        max_results: Number(document.getElementById("retrMax").value || 0) || null,
-        doc_ids: docIds.length ? docIds : null,
-        filters: filters
-      };
-      const res = await fetch("/internal/observer/retrieval/search", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
-      log("retrBackendLog", await res.json());
-    }
-    async function runLLM() {
-      const payload = {
-        prompt: document.getElementById("prompt").value,
-        context: (document.getElementById("context").value || "").split("\\n").filter(Boolean),
-        experiment_id: document.getElementById("llmExp").value || null
-      };
-      const res = await fetch("/internal/observer/llm/dry-run", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
-      log("llmLog", await res.json());
-    }
-
     async function runIngestion() {
       const fileInput = document.getElementById("ingestFile");
-      if (!fileInput.files.length) {
-        log("ingestLog", {error: "Выберите файл"});
-        return;
-      }
+      if (!fileInput.files.length) { log("ingestLog", {error: "Выберите файл"}); return; }
       const fd = new FormData();
       fd.append("file", fileInput.files[0]);
       const res = await fetch("/internal/observer/ingestion/enqueue", {
@@ -263,11 +225,8 @@ async def ui() -> str:
       });
       const data = await res.json();
       log("ingestLog", data);
-      if (data.job_id) {
-        document.getElementById("ingestStatusJob").value = data.job_id;
-      }
+      if (data.job_id) document.getElementById("ingestStatusJob").value = data.job_id;
     }
-
     async function checkIngestionStatus() {
       const jobId = document.getElementById("ingestStatusJob").value;
       const res = await fetch("/internal/observer/ingestion/status", {
@@ -280,24 +239,77 @@ async def ui() -> str:
       const logs = (data.meta && data.meta.logs) ? data.meta.logs : [];
       log("ingestModelLogs", logs.length ? logs : {info: "Нет логов модели"});
     }
-
     async function loadDocuments() {
       const res = await fetch("/internal/observer/documents", {headers: headers()});
       log("docsList", await res.json());
     }
-
     async function loadDocumentDetail() {
       const docId = document.getElementById("docDetailId").value;
       if (!docId) { log("docDetail", {error: "Укажите doc_id"}); return; }
       const res = await fetch(`/internal/observer/documents/${docId}/detail`, {headers: headers()});
       log("docDetail", await res.json());
     }
-
     async function loadDocumentTree() {
       const docId = document.getElementById("docDetailId").value;
       if (!docId) { log("docTree", {error: "Укажите doc_id"}); return; }
       const res = await fetch(`/internal/observer/documents/${docId}/tree`, {headers: headers()});
       log("docTree", await res.json());
+    }
+    async function runRetrievalBackend() {
+      const docIds = (document.getElementById("retrDocIds").value || "")
+        .split(",").map(s => s.trim()).filter(Boolean);
+      let filters = {};
+      try { filters = JSON.parse(document.getElementById("retrFilters").value || "{}"); } catch (e) { filters = {}; }
+      const payload = {
+        query: document.getElementById("retrQuery").value || "",
+        max_results: Number(document.getElementById("retrMax").value || 0) || null,
+        doc_ids: docIds.length ? docIds : null,
+        filters: filters
+      };
+      const res = await fetch("/internal/observer/retrieval/search", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
+      const data = await res.json();
+      log("retrBackendLog", data);
+      if (data.steps) {
+        log("retrSteps", data.steps);
+        log("workflow", {
+          docs: data.steps.docs ? data.steps.docs.length : 0,
+          sections: data.steps.sections ? data.steps.sections.length : 0,
+          chunks: data.steps.chunks ? data.steps.chunks.length : 0
+        });
+      } else {
+        log("retrSteps", {info: "steps not provided"});
+      }
+    }
+    async function loadRetrievalConfig() {
+      const res = await fetch("/internal/observer/retrieval/config", {headers: headers()});
+      const data = await res.json();
+      document.getElementById("docTopK").value = data.doc_top_k ?? "";
+      document.getElementById("sectionTopK").value = data.section_top_k ?? "";
+      document.getElementById("chunkTopK").value = data.chunk_top_k ?? "";
+      document.getElementById("maxResults").value = data.max_results ?? "";
+      document.getElementById("topkPerDoc").value = data.topk_per_doc ?? "";
+      document.getElementById("minScore").value = data.min_score ?? "";
+      document.getElementById("enableFilters").checked = !!data.enable_filters;
+      document.getElementById("rerankEnabled").checked = !!data.rerank_enabled;
+      document.getElementById("rerankModel").value = data.rerank_model ?? "";
+      document.getElementById("rerankTopN").value = data.rerank_top_n ?? "";
+      log("retrConfigLog", data);
+    }
+    async function saveRetrievalConfig() {
+      const payload = {
+        doc_top_k: Number(document.getElementById("docTopK").value || 0) || null,
+        section_top_k: Number(document.getElementById("sectionTopK").value || 0) || null,
+        chunk_top_k: Number(document.getElementById("chunkTopK").value || 0) || null,
+        max_results: Number(document.getElementById("maxResults").value || 0) || null,
+        topk_per_doc: Number(document.getElementById("topkPerDoc").value || 0) || null,
+        min_score: document.getElementById("minScore").value ? Number(document.getElementById("minScore").value) : null,
+        enable_filters: document.getElementById("enableFilters").checked,
+        rerank_enabled: document.getElementById("rerankEnabled").checked,
+        rerank_model: document.getElementById("rerankModel").value || null,
+        rerank_top_n: Number(document.getElementById("rerankTopN").value || 0) || null
+      };
+      const res = await fetch("/internal/observer/retrieval/config", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
+      log("retrConfigLog", await res.json());
     }
   </script>
 </body>
