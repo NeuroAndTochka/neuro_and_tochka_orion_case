@@ -115,6 +115,7 @@ async def ui() -> str:
       <input id="retrDocIds" placeholder="doc_1,doc_2" />
       <label for="retrFilters">filters (JSON)</label>
       <textarea id="retrFilters">{}</textarea>
+      <label><input id="retrRerank" type="checkbox" /> использовать reranker</label>
       <button onclick="runRetrievalBackend()">Поиск</button>
       <pre id="retrBackendLog">...</pre>
     </section>
@@ -264,7 +265,8 @@ async def ui() -> str:
         query: document.getElementById("retrQuery").value || "",
         max_results: Number(document.getElementById("retrMax").value || 0) || null,
         doc_ids: docIds.length ? docIds : null,
-        filters: filters
+        filters: filters,
+        rerank_enabled: document.getElementById("retrRerank").checked
       };
       const res = await fetch("/internal/observer/retrieval/search", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
       const data = await res.json();

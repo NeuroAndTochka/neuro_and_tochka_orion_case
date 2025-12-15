@@ -64,6 +64,7 @@ class RetrievalSearchRequest(BaseModel):
     doc_ids: Optional[List[str]] = None
     section_ids: Optional[List[str]] = None
     trace_id: Optional[str] = None
+    rerank_enabled: Optional[bool] = None
 
 
 class RetrievalHit(BaseModel):

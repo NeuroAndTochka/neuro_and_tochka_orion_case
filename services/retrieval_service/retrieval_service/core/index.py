@@ -151,6 +151,12 @@ class ChromaIndex:
             where=section_where,
             requested=self.section_top_k,
         )
+        use_rerank = False
+        if self.reranker and self.reranker.available():
+            if query.rerank_enabled is not None:
+                use_rerank = query.rerank_enabled
+            else:
+                use_rerank = bool(self.reranker.settings.rerank_enabled)
         section_hits = self._search_collection(
             self.section_collection,
             query_embedding,
@@ -159,7 +165,7 @@ class ChromaIndex:
             is_section=True,
         )
         # Rerank sections
-        if self.reranker and self.reranker.available() and self.reranker.settings.rerank_enabled:
+        if use_rerank:
             section_hits = self.reranker.rerank(query.query, section_hits, top_n=self.reranker.settings.rerank_top_n)
         steps.sections = section_hits
         self._logger.info(

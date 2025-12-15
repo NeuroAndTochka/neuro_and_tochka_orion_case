@@ -398,9 +398,11 @@ async def retrieval_search(
         "doc_ids": payload.doc_ids,
         "section_ids": payload.section_ids,
         "trace_id": payload.trace_id,
+        "rerank_enabled": payload.rerank_enabled,
     }
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        timeout = 45.0 if payload.rerank_enabled else 10.0
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(f"{settings.retrieval_base_url}/internal/retrieval/search", json=body)
             resp.raise_for_status()
             return resp.json()
