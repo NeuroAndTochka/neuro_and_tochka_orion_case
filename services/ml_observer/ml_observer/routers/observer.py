@@ -15,6 +15,9 @@ from ml_observer.schemas import (
     ExperimentDetail,
     LLMDryRunRequest,
     LLMDryRunResponse,
+    LLMConfig,
+    OrchestratorRequest,
+    OrchestratorConfig,
     RetrievalRunRequest,
     RetrievalRunResponse,
     RetrievalSearchRequest,
@@ -113,7 +116,7 @@ async def proxy_ingestion_enqueue(
     if not settings.ingestion_base_url:
         raise HTTPException(status_code=503, detail="ingestion_not_configured")
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             resp = await client.post(
                 f"{settings.ingestion_base_url}/internal/ingestion/enqueue",
                 files={"file": (file.filename, await file.read(), file.content_type or "application/octet-stream")},
@@ -147,7 +150,7 @@ async def proxy_ingestion_status(
         raise HTTPException(status_code=400, detail="job_id required")
     override_status = payload.get("status")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             if override_status:
                 resp = await client.post(
                     f"{settings.ingestion_base_url}/internal/ingestion/status",
@@ -187,7 +190,7 @@ async def list_documents(
     params = {"status": status_filter, "limit": limit, "offset": offset}
     params = {k: v for k, v in params.items() if v is not None}
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             resp = await client.get(
                 f"{settings.document_base_url}/internal/documents",
                 params=params,
@@ -209,7 +212,7 @@ async def get_summarizer_config(
     if not settings.ingestion_base_url:
         raise HTTPException(status_code=503, detail="ingestion_not_configured")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             resp = await client.get(
                 f"{settings.ingestion_base_url}/internal/ingestion/summarizer/config",
                 headers={"X-Tenant-ID": tenant_id},
@@ -231,7 +234,7 @@ async def update_summarizer_config(
     if not settings.ingestion_base_url:
         raise HTTPException(status_code=503, detail="ingestion_not_configured")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             resp = await client.post(
                 f"{settings.ingestion_base_url}/internal/ingestion/summarizer/config",
                 json=payload,
@@ -253,7 +256,7 @@ async def get_chunking_config(
     if not settings.ingestion_base_url:
         raise HTTPException(status_code=503, detail="ingestion_not_configured")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             resp = await client.get(
                 f"{settings.ingestion_base_url}/internal/ingestion/chunking/config",
                 headers={"X-Tenant-ID": tenant_id},
@@ -275,7 +278,7 @@ async def update_chunking_config(
     if not settings.ingestion_base_url:
         raise HTTPException(status_code=503, detail="ingestion_not_configured")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             resp = await client.post(
                 f"{settings.ingestion_base_url}/internal/ingestion/chunking/config",
                 json=payload,
@@ -298,7 +301,7 @@ async def get_document_tree(
     if not settings.ingestion_base_url:
         raise HTTPException(status_code=503, detail="ingestion_not_configured")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             resp = await client.get(
                 f"{settings.ingestion_base_url}/internal/ingestion/documents/{doc_id}/tree",
                 headers={"X-Tenant-ID": tenant_id},
@@ -320,7 +323,7 @@ async def get_document_detail(
     if not settings.document_base_url:
         raise HTTPException(status_code=503, detail="document_service_not_configured")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             resp = await client.get(
                 f"{settings.document_base_url}/internal/documents/{doc_id}",
                 headers={"X-Tenant-ID": tenant_id},
@@ -359,7 +362,37 @@ async def llm_dry_run(
     payload: LLMDryRunRequest,
     repo: ObserverRepository = Depends(get_repository),
     tenant_id: str = Depends(get_tenant_id),
+    settings: Settings = Depends(get_settings),
 ) -> LLMDryRunResponse:
+    if settings.llm_base_url:
+        try:
+            ctx_chunks = [{"doc_id": f"ctx_{i}", "text": text} for i, text in enumerate(payload.context or [])]
+            body = {
+                "model": None,
+                "messages": [{"role": "user", "content": payload.prompt}],
+                "context": ctx_chunks,
+                "tools": [],
+            }
+            async with httpx.AsyncClient(timeout=None) as client:
+                resp = await client.post(f"{settings.llm_base_url}/internal/llm/generate", json=body)
+                resp.raise_for_status()
+                data = resp.json()
+                answer = ""
+                if isinstance(data, dict):
+                    message = data.get("choices", [{}])[0].get("message", {}) if data.get("choices") else {}
+                    answer = message.get("content", "") or data.get("answer", "")
+                return LLMDryRunResponse(
+                    run_id=uuid4().hex,
+                    status="completed",
+                    answer=answer or "OK",
+                    usage=data.get("usage", {}) if isinstance(data, dict) else {},
+                    metadata=payload.metadata,
+                )
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
     run_id = uuid4().hex
     answer = "Mock LLM answer based on provided prompt and context."
     usage = {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}
@@ -401,7 +434,7 @@ async def retrieval_search(
         "rerank_enabled": payload.rerank_enabled,
     }
     try:
-        timeout = 45.0 if payload.rerank_enabled else 10.0
+        timeout = None
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(f"{settings.retrieval_base_url}/internal/retrieval/search", json=body)
             resp.raise_for_status()
@@ -420,7 +453,7 @@ async def get_retrieval_config(
     if not settings.retrieval_base_url:
         raise HTTPException(status_code=503, detail="retrieval_not_configured")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             resp = await client.get(
                 f"{settings.retrieval_base_url}/internal/retrieval/config",
                 headers={"X-Tenant-ID": tenant_id},
@@ -442,7 +475,7 @@ async def update_retrieval_config(
     if not settings.retrieval_base_url:
         raise HTTPException(status_code=503, detail="retrieval_not_configured")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=None) as client:
             resp = await client.post(
                 f"{settings.retrieval_base_url}/internal/retrieval/config",
                 json=payload,
@@ -454,3 +487,84 @@ async def update_retrieval_config(
         raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/orchestrator/respond")
+async def orchestrator_respond(
+    payload: OrchestratorRequest,
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.orchestrator_base_url:
+        raise HTTPException(status_code=503, detail="orchestrator_not_configured")
+    body = payload.model_dump()
+    body.setdefault("tenant_id", tenant_id)
+    body.setdefault("user", {"user_id": "observer_user", "tenant_id": tenant_id, "roles": ["observer"]})
+    try:
+        async with httpx.AsyncClient(timeout=None) as client:
+            resp = await client.post(f"{settings.orchestrator_base_url}/internal/orchestrator/respond", json=body)
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/orchestrator/config")
+async def get_orchestrator_config(
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.orchestrator_base_url:
+        raise HTTPException(status_code=503, detail="orchestrator_not_configured")
+    async with httpx.AsyncClient(timeout=None) as client:
+        resp = await client.get(f"{settings.orchestrator_base_url}/internal/orchestrator/config", headers={"X-Tenant-ID": tenant_id})
+        resp.raise_for_status()
+        return resp.json()
+
+
+@router.post("/orchestrator/config")
+async def update_orchestrator_config(
+    payload: OrchestratorConfig,
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.orchestrator_base_url:
+        raise HTTPException(status_code=503, detail="orchestrator_not_configured")
+    async with httpx.AsyncClient(timeout=None) as client:
+        resp = await client.post(
+            f"{settings.orchestrator_base_url}/internal/orchestrator/config",
+            json=payload.model_dump(exclude_none=True),
+            headers={"X-Tenant-ID": tenant_id},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+@router.get("/llm/config")
+async def get_llm_config(settings: Settings = Depends(get_settings), tenant_id: str = Depends(get_tenant_id)):
+    if not settings.llm_base_url:
+        raise HTTPException(status_code=503, detail="llm_not_configured")
+    async with httpx.AsyncClient(timeout=None) as client:
+        resp = await client.get(f"{settings.llm_base_url}/internal/llm/config", headers={"X-Tenant-ID": tenant_id})
+        resp.raise_for_status()
+        return resp.json()
+
+
+@router.post("/llm/config")
+async def update_llm_config(
+    payload: LLMConfig,
+    settings: Settings = Depends(get_settings),
+    tenant_id: str = Depends(get_tenant_id),
+):
+    if not settings.llm_base_url:
+        raise HTTPException(status_code=503, detail="llm_not_configured")
+    async with httpx.AsyncClient(timeout=None) as client:
+        resp = await client.post(
+            f"{settings.llm_base_url}/internal/llm/config",
+            json=payload.model_dump(exclude_none=True),
+            headers={"X-Tenant-ID": tenant_id},
+        )
+        resp.raise_for_status()
+        return resp.json()

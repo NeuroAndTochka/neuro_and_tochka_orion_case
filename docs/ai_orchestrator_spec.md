@@ -1,200 +1,54 @@
-# Техническая спецификация (ТЗ)
-## Микросервис: **AI Orchestrator**
-### Проект: Orion Soft Internal AI Assistant — *Visior*
+# Техническая спецификация — AI Orchestrator
 
----
+## 1. Назначение
+Оркестратор управляет RAG+MCP цепочкой: получает запрос от API Gateway, собирает контекст у Retrieval Service, готовит prompt для LLM runtime и вызывает MCP Tools Proxy в tool-loop, возвращая ответ, источники и телеметрию.
 
-# 1. Назначение сервиса
+## 2. API
+### `POST /internal/orchestrator/respond`
+Payload:
+- `query: str` (обязателен)
+- `user: {user_id, tenant_id, roles?}` **или** `user_id`+`tenant_id`
+- опц. `channel`, `locale`, `trace_id`, `filters`, `doc_ids`, `section_ids`, `max_results`
 
-AI Orchestrator — центральный координационный слой, который принимает запросы от API Gateway (после прохождения Input Safety), управляет полным пайплайном RAG/MCP и подготавливает ответ для LLM Service и последующих слоёв. Он решает, какую стратегию выбрать (прямой вызов LLM, RAG, MCP, поиск дополнительных данных), собирает телеметрию и обеспечивает единый интерфейс для фронта/интеграций.
-
----
-
-# 2. Область ответственности
-
-## 2.1 Входит в ответственность
-
-1. **Роутинг режимов**: выбор между RAG, MCP-assisted, Q&A по шаблонам, режимом "FAQ" либо эскалацией к человеку.
-2. **Управление пайплайном**: последовательный вызов Retrieval Service, LLM Service, Safety Service (output), формирование ответа.
-3. **Context Builder orchestration**: запрос чанков у Retrieval, дедупликация, подбор по токен-бюджету, подготовка контекста для LLM.
-4. **Tool policy**: включение/выключение MCP инструментов в зависимости от роли пользователя, уровня доверия, tenant-политик.
-5. **Метрики и логирование**: сбор trace_id, latency per stage, количество tool steps, статистика safety блокировок.
-6. **Fallback сценарии**: повторный запрос к Retrieval, смена модели, деградация на короткий ответ в случае таймаутов.
-
-## 2.2 Не входит в ответственность
-
-- Выполнение самих LLM-инференсов (это LLM Service).
-- Ингеренция документов (Ingestion Service).
-- Проверка аутентификации (API Gateway).
-- Хранение истории диалогов.
-
----
-
-# 3. Архитектура (High-level)
-
-```
-Client → API Gateway → AI Orchestrator
-                       ├─ Retrieval Service (doc/section/chunk)
-                       ├─ LLM Service (RAG + MCP)
-                       ├─ Safety Service (output)
-                       └─ Observability stack (metrics/logs)
-```
-
-Сервис stateless, горизонтально масштабируемый (Kubernetes Deployment). Все вызовы сопровождаются `trace_id`, который прокидывается вниз.
-
----
-
-# 4. Внешний API
-
-## 4.1 `POST /internal/orchestrator/respond`
-
-**Request**
+Ответ:
 ```json
 {
-  "conversation_id": "conv_123",
-  "user": {
-    "user_id": "u_1",
-    "tenant_id": "tenant_1",
-    "roles": ["support"]
-  },
-  "query": "Как настроить LDAP интеграцию?",
-  "channel": "web",
-  "locale": "ru",
-  "trace_id": "abc-def-123"
+  "answer": "...",
+  "sources": [{"doc_id": "doc_1", "section_id": "sec_intro", "page_start": 1, "page_end": 2, "score": 0.9}],
+  "tools": [{"name": "read_chunk_window", "arguments": {...}, "result_summary": "..."}],
+  "safety": {"input": "allowed", "output": "allowed"},
+  "telemetry": {"trace_id": "trace-123", "retrieval_latency_ms": 120, "llm_latency_ms": null, "tool_steps": 1}
 }
 ```
+Ошибки: 400 при отсутствии user context или превышении лимитов tool-loop/контекста; 502 при ошибках downstream.
 
-**Response (успех)**
-```json
-{
-  "answer": "Чтобы настроить LDAP...",
-  "sources": [...],
-  "safety": {
-    "input": "allowed",
-    "output": "allowed"
-  },
-  "telemetry": {
-    "trace_id": "abc-def-123",
-    "retrieval_latency_ms": 180,
-    "llm_latency_ms": 920,
-    "tool_steps": 1
-  }
-}
-```
+### `GET/POST /internal/orchestrator/config`
+Возвращает/принимает: `default_model`, `prompt_token_budget`, `context_token_budget`, `max_tool_steps`, `window_initial`, `window_step`, `window_max`, `mock_mode`.
 
-**Response (ошибка)**
-```json
-{
-  "error": {
-    "code": "PIPELINE_TIMEOUT",
-    "message": "LLM не успел ответить за 3 секунды"
-  },
-  "trace_id": "abc-def-123"
-}
-```
+### `/health`
+`{"status":"ok"}`.
 
----
+## 3. Поведение
+1. Определяет пользователя (использует `user` или пару `user_id/tenant_id`), генерирует trace_id при необходимости.
+2. Делает `RetrievalClient.search` с капом `max_results<=50`, добавляет флаги `enable_filters` из конфигурации; поле `text` в hits отбрасывается.
+3. В `build_context` обрезает summary до `prompt_token_budget*4` символов и строит первый prompt: только query + список секций (doc_id/section_id/summary/score/pages), без raw текста; системные сообщения явно говорят, что полного текста нет и нужны MCP-инструменты.
+4. Tool-loop: LLM runtime может вернуть `tool_call`; оркестратор выбирает `read_chunk_window` если известен anchor_chunk_id (первый chunk секции или chunk_id из hit), иначе принудительно падает на `read_doc_section`.
+5. Прогрессивное окно: `window_initial` → +`window_step` до `window_max` на повторных обращениях к той же секции; учитывает prompt tokens + текст из tool-результатов и режет при превышении `context_token_budget`.
+6. `mock_mode=true` (дефолт) эмулирует retrieval/LLM/MCP ответы без сетевых вызовов.
 
-# 5. Основной поток работы
+## 4. Зависимости
+- **Retrieval Service**: `/internal/retrieval/search` (вход: query, tenant_id, фильтры) → hits/steps.
+- **LLM runtime** (через LLM Service клиент): OpenAI-style chat completions.
+- **MCP Tools Proxy**: `read_chunk_window`, `read_doc_section`.
 
-1. Получить запрос от API Gateway, проверить `trace_id`, user context.
-2. Вызвать Retrieval Service (`/internal/retrieval/search`) с параметрами пользователя и вопросом.
-3. Применить стратегию Context Builder: обрезать чанки до `MAX_PROMPT_TOKENS`, добавить метаданные.
-4. Сформировать payload для LLM Service (`/internal/llm/generate`), включая system_prompt и разрешённые инструменты.
-5. Дождаться ответа LLM Service. При необходимости повторить вызов с другим режимом (fallback) максимум 1 раз.
-6. Отправить ответ в Output Safety (`/internal/safety/output-check`) с информацией о пользователе, вопросе и черновиком ответа.
-7. Сформировать итоговую структуру ответа (answer + sources + telemetry) и вернуть наверх.
-8. Проложить события в лог/метрики.
+## 5. Конфигурация (`ORCH_*`)
+`retrieval_url`, `mcp_proxy_url`, `llm_runtime_url`, `default_model`, `prompt_token_budget`, `context_token_budget`, `max_tool_steps`, `window_initial`, `window_step`, `window_max`, `retry_attempts`, `mock_mode`, `host/port/log_level`.
 
----
+## 6. Ограничения
+- Output safety не вызывается (пока) — отвечает только input safety от Gateway.
+- Нет сохранения истории диалога; каждое обращение stateless.
+- Трассировка/метрики — только структурные логи (`structlog`).
 
-# 6. Интеграции и контракты
-
-| Сервис           | Endpoint                          | Назначение                      |
-|------------------|-----------------------------------|---------------------------------|
-| Retrieval        | `/internal/retrieval/search`      | Получение doc/section/chunk     |
-| LLM Service      | `/internal/llm/generate`          | Генерация ответа с MCP          |
-| Safety Service   | `/internal/safety/output-check`   | Финальная проверка ответа       |
-| Observability    | `/internal/metrics` (push)        | Публикация метрик/трейсов       |
-
-Все вызовы содержат `X-Request-ID`, `X-Tenant-ID`, `Authorization` (service-to-service token).
-
----
-
-# 7. Конфигурация (ENV)
-
-| Переменная                     | Назначение                              |
-|--------------------------------|------------------------------------------|
-| `ORCH_RETRIEVAL_URL`           | Базовый URL Retrieval Service            |
-| `ORCH_LLM_URL`                 | URL LLM Service                          |
-| `ORCH_SAFETY_URL`              | URL Safety Service (output)              |
-| `ORCH_MODEL_STRATEGY`          | Режим (например, `rag_default`)          |
-| `ORCH_MAX_LATENCY_MS`          | Общий таймаут пайплайна                  |
-| `ORCH_MAX_TOOL_STEPS`          | Максимум MCP шагов, разрешённых от LLM   |
-| `ORCH_PROMPT_TOKEN_BUDGET`     | Ограничение на суммарный контекст        |
-| `ORCH_RETRY_ATTEMPTS`          | Число повторов при ошибках               |
-| `LOG_LEVEL`                    | Уровень логирования                      |
-| `ENABLE_TRACE_EXPORT`          | Включить экспорт в Jaeger/OTel           |
-
----
-
-# 8. Error handling & Fallbacks
-
-- **Retrieval timeout** → возврат `ERROR_RETRIEVAL_TIMEOUT`, попытка снова 1 раз.
-- **LLM runtime error** → переключение на альтернативную модель (если конфигурирована) или возврат `LLM_RUNTIME_ERROR`.
-- **Safety блокировка** → передача кода `OUTPUT_BLOCKED` в API Gateway.
-- **Tool loop / limit exceeded** → прерывание и сообщение пользователю о невозможности ответить.
-
----
-
-# 9. Наблюдаемость
-
-Метрики (Prometheus):
-- `orch_requests_total{mode=...,tenant=...}`
-- `orch_stage_latency_ms{stage=retrieval|llm|safety}`
-- `orch_tool_steps_histogram`
-- `orch_failures_total{code=...}`
-
-Логи (structured): trace_id, stage, latency, количество чанков, model_name.
-
-Трейсы (OpenTelemetry): спаны на Retrieval, LLM, Safety.
-
----
-
-# 10. Тестирование
-
-## Unit
-- Построение payload для LLM.
-- Обработка ответа Retrieval (селекция чанков).
-- Правила fallback по конфигурации.
-
-## Integration
-- e2e сценарий с mock Retrieval + LLM + Safety.
-- Проверка таймаутов и повторов.
-
-## Load / Chaos
-- Тесты с высоким количеством параллельных запросов.
-- Инжекция ошибок (LLM timeout, Safety error).
-
----
-
-# 11. Security & Governance
-
-- Все запросы подписаны service token + mutual TLS (в будущем).
-- Tenant isolation: сверка `tenant_id` на каждом шаге.
-- Логи не содержат PII/секретов.
-- Соблюдение OWASP LLM-Top10 посредством двух safety контуров и MCP-guarded tool use.
-
----
-
-# 12. Открытые вопросы
-
-1. Нужен ли stateful режим (кэш контекста) для ускорения многотуровых сессий?
-2. Следует ли реализовать адаптивный выбор Retrieval стека (dense only vs hybrid)?
-3. Поддерживать ли streaming в сторону API Gateway?
-
----
-
-# 13. Итог
-
-AI Orchestrator обеспечивает управляемость пайплайна, сохраняя при этом модульность и расширяемость. Чёткие интерфейсы с Retrieval, LLM и Safety позволяют добавлять новые режимы, модели и политики без изменения фронтенда.
+## 7. Тестирование
+- Юниты в `services/ai_orchestrator/tests` проверяют построение контекста и tool-loop в mock режиме.
+- E2E — `tests/test_pipeline_integration.py` через ASGITransport (mock стэк).

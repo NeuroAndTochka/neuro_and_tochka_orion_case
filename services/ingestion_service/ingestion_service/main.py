@@ -78,6 +78,9 @@ async def worker_loop(app: FastAPI) -> None:
             chunk_size=settings.chunk_size,
             chunk_overlap=settings.chunk_overlap,
             vector_store=vector_store,
+            product=item.product,
+            version=item.version,
+            tags=item.tags,
         )
         if not success and item.attempt < settings.max_attempts:
             next_attempt = item.attempt + 1

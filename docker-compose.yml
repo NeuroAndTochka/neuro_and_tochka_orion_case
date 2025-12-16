@@ -38,7 +38,9 @@ services:
     environment:
       MCP_PROXY_HOST: 0.0.0.0
       MCP_PROXY_PORT: "8082"
-      MCP_PROXY_LOG_LEVEL: info
+      MCP_PROXY_LOG_LEVEL: debug
+      MCP_PROXY_RETRIEVAL_WINDOW_URL: http://retrieval_service:8040/internal/retrieval/chunks/window
+      MCP_PROXY_MOCK_MODE: "false"
     ports:
       - "8082:8082"
     networks:
@@ -53,7 +55,10 @@ services:
       LLM_SERVICE_PORT: "8090"
       LLM_SERVICE_LOG_LEVEL: info
       LLM_SERVICE_MCP_PROXY_URL: http://mcp_tools_proxy:8082/internal/mcp/execute
-      LLM_SERVICE_MOCK_MODE: "true"
+      LLM_SERVICE_MOCK_MODE: "false"
+      # Укажите chat-completions endpoint целевого runtime (OpenAI/OpenRouter совместимый)
+      LLM_SERVICE_LLM_RUNTIME_URL: ${LLM_RUNTIME_URL:-https://openrouter.ai/api/v1/chat/completions}
+      LLM_SERVICE_RUNTIME_API_KEY: ${LLM_RUNTIME_API_KEY}
     ports:
       - "8090:8090"
     depends_on:
@@ -69,7 +74,14 @@ services:
       ORCH_HOST: 0.0.0.0
       ORCH_PORT: "8070"
       ORCH_LOG_LEVEL: info
-      ORCH_MOCK_MODE: "true"
+      ORCH_MOCK_MODE: "false"
+      ORCH_RETRIEVAL_URL: http://retrieval_service:8040/internal/retrieval/search
+      ORCH_MCP_PROXY_URL: http://mcp_tools_proxy:8082/internal/mcp/execute
+      ORCH_LLM_RUNTIME_URL: http://llm_service:8090/internal/llm/generate
+      ORCH_DEFAULT_MODEL: gpt-4o-mini
+      ORCH_MAX_COMPLETION_TOKENS: "512"
+      ORCH_CONTEXT_TOKEN_BUDGET: "4096"
+      ORCH_MAX_TOOL_STEPS: "4"
     ports:
       - "8070:8070"
     networks:
@@ -140,7 +152,7 @@ services:
     environment:
       RETR_HOST: 0.0.0.0
       RETR_PORT: "8040"
-      RETR_LOG_LEVEL: info
+      RETR_LOG_LEVEL: debug
       RETR_MOCK_MODE: "false"
       RETR_VECTOR_BACKEND: chroma
       RETR_CHROMA_HOST: http://chroma:8000
@@ -162,11 +174,13 @@ services:
     environment:
       OBS_HOST: 0.0.0.0
       OBS_PORT: "8085"
-      OBS_LOG_LEVEL: info
+      OBS_LOG_LEVEL: debug
       OBS_MOCK_MODE: "true"
       OBS_INGESTION_BASE_URL: http://ingestion_service:8050
       OBS_DOCUMENT_BASE_URL: http://document_service:8060
       OBS_RETRIEVAL_BASE_URL: http://retrieval_service:8040
+      OBS_ORCHESTRATOR_BASE_URL: http://ai_orchestrator:8070
+      OBS_LLM_BASE_URL: http://llm_service:8090
     ports:
       - "8085:8085"
     networks:

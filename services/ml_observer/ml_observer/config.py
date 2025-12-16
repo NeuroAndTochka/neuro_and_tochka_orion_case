@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     document_base_url: Optional[str] = None
     retrieval_base_url: Optional[str] = None
     llm_base_url: Optional[str] = None
+    orchestrator_base_url: Optional[str] = None
 
     minio_endpoint: Optional[str] = None
     minio_bucket: Optional[str] = None

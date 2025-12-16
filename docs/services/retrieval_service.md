@@ -1,45 +1,20 @@
-# Retrieval Service — Техническое задание (v1)
+# Retrieval Service
 
 ## Назначение
-Сервис выполняет поиск релевантных чанков/секций документов для AI Orchestrator. Должен работать с векторным хранилищем (Chroma/PGVector и т.п.), применять фильтры по тенанту/метаданным и возвращать стабильные идентификаторы и страницы.
+Ступенчатый поиск по doc/section/chunk метаданным/эмбеддингам (Chroma) или по in-memory моковым данным. Используется AI Orchestrator, ML Observer и MCP chunk window.
 
-## Требования
-1. **API**
-   - `POST /internal/retrieval/search`
-     - Request: `query: str`, `tenant_id: str`, `max_results?: int=5`, `filters?: {product?, version?, tags?, doc_ids?, section_ids?}`, `doc_ids?: list[str]`, `section_ids?: list[str]`.
-     - Response: `{"hits": [...], "steps": {"docs": [...], "sections": [...], "chunks": [...]}}` (steps опционально). `score` по убыванию, стабильные ID.
-   - `/health` — ok + проверка доступности backend.
-2. **Данные и backend**
-   - Векторное хранилище: адаптер с интерфейсом `search(query: RetrievalQuery) -> list[RetrievalHit]`. Базовая реализация — Chroma (использует коллекции, наполняемые ingestion_service). Поддержать мок-режим (in-memory список).
-   - Фильтрация по `tenant_id` обязательна; поддержать фильтры по `doc_id`, метаданным (product/version/tags) из мета в vector store.
-   - Параметры: `max_results` (глобальный лимит), `topk_per_doc` (лимит чанков на документ), `min_score` (опциональный отсев).
-3. **Логика поиска**
-   - Этап 1: doc-level top-K (если есть doc embeddings) с фильтрами по tenant/метаданным → `topk_docs`.
-   - Этап 2: section-level top-M в пределах найденных документов (summary embeddings/мета) → лимит per-doc + глобальный `max_results`/`max_sections`.
-   - Этап 3: chunk-level уточнение (chunk embeddings) → `topk_per_doc` и общий `max_results`.
-   - Постобработка: сортировка по score убыванию, отсев ниже `min_score`, дедуп по `chunk_id`, обрезка до `max_results`.
-   - `text` в hits может быть summary секции или chunk text; полный текст LLM может получить через MCP по `doc_id` и `page_start/page_end`.
-4. **Конфигурация (ENV)**
-   - `RETR_MOCK_MODE` — использовать in-memory индекс.
-   - `RETR_MAX_RESULTS` (дефолт 5), `RETR_TOPK_PER_DOC`, `RETR_MIN_SCORE`.
-   - `RETR_VECTOR_BACKEND` (например, `chroma`), `RETR_CHROMA_PATH`/`RETR_CHROMA_HOST`.
-   - `RETR_DOC_SERVICE_BASE_URL` — для валидации/фильтров (опционально).
-   - `RETR_LOG_LEVEL`, таймауты backend.
-5. **Безопасность/тенантность**
-   - `tenant_id` обязателен, используется в фильтрах backend.
-   - Лимитировать `max_results` сверху (например, 50).
-6. **Наблюдаемость**
-   - Логи: запрос, tenant, latency, backend, кол-во результатов.
-   - Метрики (план): latency p95, hits count, errors; healthcheck должен отражать состояние backend.
-7. **Отказоустойчивость**
-   - Таймауты/обработка ошибок backend → возвращать 502/500 с кодом `backend_unavailable`.
-   - Мок-режим без зависимостей.
-8. **Тесты**
-   - Unit: фильтры, лимиты, сортировка, shape ответа.
-   - Интеграция: с локальной Chroma (docker-compose) — проверка поиска/tenant фильтрации.
-   - E2E (опционально): совместно с Orchestrator (ASGITransport, как в `tests/test_pipeline_integration.py`).
+## Эндпоинты (`/internal/retrieval`)
+- `POST /search` — `query`, `tenant_id`, опц. `max_results`, `filters{product,version,tags,doc_ids,section_ids}`, `doc_ids`, `section_ids`, `enable_filters`, `rerank_enabled`, `trace_id`. Ответ: `hits` (doc/section/chunk без поля `text`, только id/summary/score/метаданные), опц. `steps{docs,sections,chunks}`.
+- `GET/POST /config` — текущие/новые значения `max_results`, `topk_per_doc`, `min_score`, `doc_top_k`, `section_top_k`, `chunk_top_k`, `rerank_enabled/model/top_n`, `enable_filters`, `min_docs`.
+- `POST /chunks/window` — `tenant_id`, `doc_id`, `anchor_chunk_id`, опц. `window_before/after`. Возвращает отсортированное окно чанков вокруг anchor (единственный endpoint с raw текстом).
+- `/health` — `{"status":"ok"}` и, в prod-режиме, проверка доступности Chroma.
 
-## Архитектура (предложение)
-- FastAPI (`services/retrieval_service`), адаптер backend в `core/index.py` (интерфейс + Chroma реализация + InMemory).
-- Конфиг через `RETR_*`, логирование через structlog.
-- Документация: обновить спецификацию `docs/retrieval_service_spec.md` после реализации.
+## Поведение поиска (ChromaIndex)
+1. Встраивает запрос через `EmbeddingClient` (OpenAI-style или псевдо-эмбеддинги в mock режиме).
+2. Doc-level topK (коллекция `ingestion_docs`), при нехватке паддит по метаданным.
+3. Section-level topK (коллекция `ingestion_sections`), опционально rerank через OpenAI Chat completions.
+4. Chunk-level отбор (коллекция `ingestion_chunks`), фильтры per-doc (`topk_per_doc`), отсев по `min_score`; `text` из метаданных не возвращается, используется только summary/title.
+5. Возвращает section hits, если они есть, иначе chunk hits (chunk-результаты могут быть пустыми). Метаданные `page_start/page_end/title/summary/chunk_ids` заполняются из коллекций; сырой текст доступен только через `/chunks/window`.
+
+## Конфигурация (`RETR_*`)
+`mock_mode`, `vector_backend`, `chroma_path/host/collection`, `max_results`, `topk_per_doc`, `min_score`, `doc_top_k`, `section_top_k`, `chunk_top_k`, `enable_filters`, `min_docs`, `embedding_api_base/key/model`, `embedding_max_attempts`, `embedding_retry_delay_seconds`, `rerank_enabled`, `rerank_model`, `rerank_api_base/key`, `rerank_top_n`.

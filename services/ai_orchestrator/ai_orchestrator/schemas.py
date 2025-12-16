@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +20,10 @@ class OrchestratorRequest(BaseModel):
     channel: Optional[str] = None
     locale: Optional[str] = None
     trace_id: Optional[str] = None
+    filters: Optional[Dict[str, Any]] = None
+    doc_ids: Optional[List[str]] = None
+    section_ids: Optional[List[str]] = None
+    max_results: Optional[int] = None
 
 
 class SourceItem(BaseModel):
@@ -28,6 +32,13 @@ class SourceItem(BaseModel):
     title: Optional[str] = None
     page_start: Optional[int] = None
     page_end: Optional[int] = None
+    score: Optional[float] = None
+
+
+class ToolCallTrace(BaseModel):
+    name: str
+    arguments: Dict[str, Any]
+    result_summary: Optional[str] = None
 
 
 class SafetyBlock(BaseModel):
@@ -45,5 +56,6 @@ class Telemetry(BaseModel):
 class OrchestratorResponse(BaseModel):
     answer: str
     sources: List[SourceItem] = Field(default_factory=list)
+    tools: List[ToolCallTrace] = Field(default_factory=list)
     safety: SafetyBlock
     telemetry: Telemetry

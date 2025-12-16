@@ -34,7 +34,7 @@ class RetrievalHit(BaseModel):
     doc_id: str
     section_id: Optional[str] = None
     chunk_id: Optional[str] = None
-    text: str
+    text: Optional[str] = Field(default=None, exclude=True)
     score: float
     page_start: Optional[int] = None
     page_end: Optional[int] = None

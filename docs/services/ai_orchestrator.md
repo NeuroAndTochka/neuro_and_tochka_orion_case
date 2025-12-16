@@ -1,65 +1,24 @@
 # AI Orchestrator
 
 ## Назначение
-Оркестратор управляет RAG-пайплайном: проверяет входные данные, запрашивает релевантный контекст из retrieval service, формирует payload для LLM service, проверяет выход через safety и строит ответ с телеметрией. Endpoint вызывается только API Gateway.
+Собирает контекст из Retrieval Service и orchestrat'ит tool-loop с LLM runtime и MCP Tools Proxy. Возвращает ответ, источники и телеметрию для API Gateway.
 
-## Архитектура
-- FastAPI (`services/ai_orchestrator`).
-- Основной класс `core/orchestrator.Orchestrator` использует клиентов retrieval/llm/safety.
-- Конфигурация через `ORCH_*`.
+## Эндпоинты (`/internal/orchestrator`)
+- `POST /respond` — принимает `query`, `user` или `user_id+tenant_id`, опц. `trace_id`, `filters`, `doc_ids`, `section_ids`, `max_results`. Ответ: `answer`, `sources`, `tools`, `safety`, `telemetry`.
+- `GET/POST /config` — runtime настройки (model, budgets, tool window, mock_mode).
+- `/health` — базовый healthcheck.
 
-## Конфигурационные параметры
-| Переменная | Назначение |
-| --- | --- |
-| `ORCH_RETRIEVAL_URL` | URL поиска. |
-| `ORCH_LLM_URL` | URL генерации ответа. |
-| `ORCH_SAFETY_URL` | URL output safety. |
-| `ORCH_PROMPT_TOKEN_BUDGET` | Ограничение на контекст. |
-| `ORCH_MOCK_MODE` | Позволяет вернуть готовый ответ без сетевых вызовов. |
+## Поток обработки
+1. Проверяет наличие user context; без него отдаёт 400.
+2. Если user не передан, встает дефолтный user/tenant из конфигурации (`default_user_id/default_tenant_id`). Запрашивает `/internal/retrieval/search` (капитирует `max_results` до `Settings.max_results`) и выкидывает поле `text` из hits.
+3. Строит summary-контекст (без полного текста) и первый prompt: только query + список секций (id/summary/pages/score) с инструкцией, что полного текста нет и его нужно вытягивать MCP инструментами.
+4. Запускает tool-loop (ограничение `max_tool_steps`). Предпочитает `read_chunk_window`; если anchor chunk отсутствует, принудительно использует `read_doc_section`. Raw текст попадает к модели только через TOOL_RESULT MCP.
+5. Суммирует использованные токены (prompt + текст из tool-результатов); превышение `context_token_budget` даёт ошибку.
 
-## API
-### `POST /internal/orchestrator/respond`
-**Request**
-```json
-{
-  "query": "Расскажи про LDAP",
-  "trace_id": "trace-abc",
-  "tenant_id": "tenant_1",
-  "user": {
-    "user_id": "demo",
-    "tenant_id": "tenant_1",
-    "roles": ["user"]
-  },
-  "safety": {"status": "allowed"}
-}
-```
-**Response**
-```json
-{
-  "answer": "LDAP — это ...",
-  "sources": [
-    {"doc_id": "doc_1", "section_id": "sec_intro", "page_start": 1, "page_end": 2}
-  ],
-  "safety": {"input": "allowed", "output": "allowed"},
-  "telemetry": {
-    "trace_id": "trace-abc",
-    "retrieval_latency_ms": 103,
-    "llm_latency_ms": 210,
-    "tool_steps": 0
-  }
-}
-```
+## Конфигурация (`ORCH_*`)
+`retrieval_url`, `mcp_proxy_url`, `llm_runtime_url`, `default_model`, `prompt_token_budget`, `context_token_budget`, `max_tool_steps`, `window_initial/step/max`, `mock_mode`.
 
-## Зависимости
-1. **Retrieval service** — ожидает `{"query", "tenant_id", "max_results?"}` и возвращает `{"hits": [...]}`. Оркестратор приводить ответ к списку словарей.
-2. **LLM service** — payload формируется в `_build_llm_payload`; любые изменения структуры нужно согласовать с LLM командой.
-3. **Safety service (output)** — отправляем `user`, `query`, `answer`, `sources`, `meta.trace_id`.
-
-## Расширение
-- Поддержка новых режимов (например, tool-use) добавляется через настраиваемые стратегии в `core/orchestrator.py` и `schemas.py`.
-- При изменении формата `OrchestratorResponse` все клиенты (API Gateway, интеграционные тесты) должны обновиться одновременно.
-- Для mock режима рекомендуется использовать отдельные fixtures или dependency overrides, но структура ответа должна оставаться неизменной.
-
-## Mock требования
-- Любой новый ключ в response должен иметь default в mock payload, иначе API Gateway может упасть при сериализации.
-- Для unit-тестов (например `services/ai_orchestrator/tests/test_respond.py`) используйте `Settings(mock_mode=True)` и кастомные httpx mock-транспорты, чтобы зафиксировать контракт.
+## Особенности
+- `mock_mode=true` (по умолчанию) — retrieval/LLM/MCP клиенты возвращают заглушки; tool-loop завершается за 1–2 шага.
+- Output safety пока не вызывается; безопасность только на входе через Gateway.
+- progressive window увеличивает количество чанков на секцию, если модель повторно запрашивает данные.

@@ -14,8 +14,10 @@ configure_logging(settings.log_level)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with httpx.AsyncClient() as client:
+    # Upstream LLM/retrieval calls may be slow; bump client timeout to avoid premature failures.
+    async with httpx.AsyncClient(timeout=60) as client:
         app.state.orchestrator = Orchestrator(settings, client)
+        app.state.settings = settings
         yield
 
 

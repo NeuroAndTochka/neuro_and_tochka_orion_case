@@ -12,12 +12,21 @@ class Settings(BaseSettings):
     log_level: str = "info"
 
     retrieval_url: str | None = None
-    llm_url: str | None = None
-    safety_url: str | None = None
-    model_strategy: str = "rag_default"
+    mcp_proxy_url: str | None = None
+    llm_runtime_url: str | None = None
+    llm_api_key: str | None = None
+    default_model: str = "gpt-4o-mini"
+    model_strategy: str = "rag_mcp"
     prompt_token_budget: int = 4096
+    context_token_budget: int = 4096
+    max_tool_steps: int = 4
+    window_initial: int = 1
+    window_step: int = 1
+    window_max: int = 5
     retry_attempts: int = 1
     mock_mode: bool = True
+    default_user_id: str = "anonymous"
+    default_tenant_id: str = "observer_tenant"
 
 
 @lru_cache

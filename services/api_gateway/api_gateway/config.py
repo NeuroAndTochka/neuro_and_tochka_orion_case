@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     http_timeout_seconds: float = 10.0
     rate_limit_per_minute: int = 120
     mock_mode: bool = False
+    # Force all UI traffic to the shared observer tenant to keep data consistent.
+    default_tenant_id: str = "observer_tenant"
 
 
 @lru_cache

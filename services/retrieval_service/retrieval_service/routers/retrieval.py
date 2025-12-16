@@ -1,3 +1,4 @@
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from retrieval_service.core.index import InMemoryIndex  # noqa
@@ -5,6 +6,7 @@ from retrieval_service.schemas import RetrievalQuery, RetrievalResponse
 from retrieval_service.config import Settings
 
 router = APIRouter(prefix="/internal/retrieval", tags=["retrieval"])
+logger = structlog.get_logger(__name__)
 
 
 def get_index(request: Request):
@@ -27,6 +29,16 @@ async def search(
     index=Depends(get_index),
     settings: Settings = Depends(get_settings),
 ) -> RetrievalResponse:
+    logger.info(
+        "retrieval_http_request",
+        query=query.query,
+        tenant_id=query.tenant_id,
+        max_results=query.max_results,
+        filters=bool(query.filters),
+        doc_ids=bool(query.doc_ids),
+        section_ids=bool(query.section_ids),
+        trace_id=getattr(query, "trace_id", None),
+    )
     index_logger = getattr(index, "_logger", None)
     if index_logger:
         index_logger.info(
@@ -42,20 +54,33 @@ async def search(
     if query.enable_filters is None:
         query.enable_filters = settings.enable_filters
     try:
-        hits, steps = index.search(query)
+        search_result = index.search(query)
+        if isinstance(search_result, tuple):
+            hits, steps = search_result
+        else:
+            hits, steps = search_result, None
         if index_logger:
             index_logger.info(
                 "retrieval_response",
                 tenant_id=query.tenant_id,
                 hits=len(hits),
-                docs=len(steps.docs) if steps else 0,
-                sections=len(steps.sections) if steps else 0,
-                chunks=len(steps.chunks) if steps else 0,
+                docs=len(steps.docs) if getattr(steps, "docs", None) else 0,
+                sections=len(steps.sections) if getattr(steps, "sections", None) else 0,
+                chunks=len(steps.chunks) if getattr(steps, "chunks", None) else 0,
             )
+        logger.info(
+            "retrieval_http_response",
+            hits=len(hits),
+            docs=len(steps.docs) if getattr(steps, "docs", None) else 0,
+            sections=len(steps.sections) if getattr(steps, "sections", None) else 0,
+            chunks=len(steps.chunks) if getattr(steps, "chunks", None) else 0,
+            trace_id=getattr(query, "trace_id", None),
+        )
         return RetrievalResponse(hits=hits, steps=steps)
     except Exception as exc:
         if index_logger:
             index_logger.error("retrieval_failed", error=str(exc))
+        logger.error("retrieval_http_failed", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"code": "backend_unavailable", "message": str(exc)},

@@ -80,8 +80,6 @@ async def ui() -> str:
       <h3>Summarizer</h3>
       <label for="sumModel">Model</label>
       <input id="sumModel" placeholder="openai/gpt-4o-mini" />
-      <label for="sumMaxTokens">Max tokens</label>
-      <input id="sumMaxTokens" type="number" value="120" />
       <label for="sumPrompt">System prompt</label>
       <textarea id="sumPrompt">Сделай короткое резюме.</textarea>
       <label><input id="sumUseRoles" type="checkbox" checked /> use roles</label>
@@ -148,6 +146,62 @@ async def ui() -> str:
     </section>
 
     <section>
+      <h3>Orchestrator (RAG+MCP)</h3>
+      <label for="orchQuery">Query</label>
+      <input id="orchQuery" value="Explain LDAP setup" />
+      <label for="orchMaxResults">max_results</label>
+      <input id="orchMaxResults" type="number" value="5" />
+      <label for="orchDocIds">doc_ids (comma sep)</label>
+      <input id="orchDocIds" placeholder="doc_1,doc_2" />
+      <label for="orchFilters">filters (JSON)</label>
+      <textarea id="orchFilters">{}</textarea>
+      <label for="orchTrace">trace_id</label>
+      <input id="orchTrace" placeholder="trace-123" />
+      <button onclick="runOrchestrator()">Запустить</button>
+      <pre id="orchAnswer">...</pre>
+      <pre id="orchSources">sources</pre>
+      <pre id="orchTools">tools (MCP)</pre>
+      <h4>Config</h4>
+      <label for="orchModel">default_model</label>
+      <input id="orchModel" placeholder="gpt-4o-mini" />
+      <label for="orchStrategy">model_strategy</label>
+      <input id="orchStrategy" placeholder="rag_mcp" />
+      <label for="orchPromptBudget">prompt_token_budget</label>
+      <input id="orchPromptBudget" type="number" value="4096" />
+      <label for="orchContextBudget">context_token_budget</label>
+      <input id="orchContextBudget" type="number" value="4096" />
+      <label for="orchToolSteps">max_tool_steps</label>
+      <input id="orchToolSteps" type="number" value="4" />
+      <div class="row-flex">
+        <label for="orchWinInit">window_initial</label><input id="orchWinInit" type="number" value="1" />
+        <label for="orchWinStep">window_step</label><input id="orchWinStep" type="number" value="1" />
+        <label for="orchWinMax">window_max</label><input id="orchWinMax" type="number" value="5" />
+      </div>
+      <label><input id="orchMock" type="checkbox" /> mock_mode</label>
+      <div class="row-flex">
+        <button onclick="loadOrchConfig()">Load cfg</button>
+        <button onclick="saveOrchConfig()">Save cfg</button>
+      </div>
+    </section>
+
+    <section>
+      <h3>LLM Service</h3>
+      <label for="llmModel">default_model</label>
+      <input id="llmModel" placeholder="gpt-4o-mini" />
+      <label for="llmRuntimeUrl">llm_runtime_url</label>
+      <input id="llmRuntimeUrl" placeholder="http://runtime/v1/chat/completions" />
+      <label for="llmToolSteps">max_tool_steps</label>
+      <input id="llmToolSteps" type="number" value="3" />
+      <label><input id="llmJsonMode" type="checkbox" checked /> enable_json_mode</label>
+      <label><input id="llmMock" type="checkbox" /> mock_mode</label>
+      <div class="row-flex">
+        <button onclick="loadLLMConfig()">Load cfg</button>
+        <button onclick="saveLLMConfig()">Save cfg</button>
+      </div>
+      <pre id="llmConfigLog">...</pre>
+    </section>
+
+    <section>
       <h3>Документы</h3>
       <label for="docDetailId">doc_id</label>
       <input id="docDetailId" placeholder="doc_xxx" />
@@ -184,7 +238,6 @@ async def ui() -> str:
       const res = await fetch("/internal/observer/summarizer/config", {headers: headers()});
       const data = await res.json();
       document.getElementById("sumModel").value = data.model || "";
-      document.getElementById("sumMaxTokens").value = data.max_tokens || 120;
       document.getElementById("sumPrompt").value = data.system_prompt || "";
       document.getElementById("sumUseRoles").checked = data.use_roles !== false;
       log("sumConfig", data);
@@ -192,7 +245,6 @@ async def ui() -> str:
     async function saveSummarizerConfig() {
       const payload = {
         model: document.getElementById("sumModel").value || null,
-        max_tokens: Number(document.getElementById("sumMaxTokens").value || 0) || null,
         system_prompt: document.getElementById("sumPrompt").value || null,
         use_roles: document.getElementById("sumUseRoles").checked
       };
@@ -281,6 +333,74 @@ async def ui() -> str:
       } else {
         log("retrSteps", {info: "steps not provided"});
       }
+    }
+    async function runOrchestrator() {
+      let filters = null;
+      try { filters = document.getElementById("orchFilters").value ? JSON.parse(document.getElementById("orchFilters").value) : null; } catch (e) { filters = null; }
+      const docIds = (document.getElementById("orchDocIds").value || "").split(",").map(s => s.trim()).filter(Boolean);
+      const payload = {
+        query: document.getElementById("orchQuery").value || "",
+        max_results: Number(document.getElementById("orchMaxResults").value || 0) || null,
+        doc_ids: docIds.length ? docIds : null,
+        filters: filters,
+        trace_id: document.getElementById("orchTrace").value || `trace-${Math.random().toString(36).slice(2,7)}`
+      };
+      const res = await fetch("/internal/observer/orchestrator/respond", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
+      const data = await res.json();
+      log("orchAnswer", data);
+      log("orchSources", data.sources || []);
+      log("orchTools", data.tools || data.tool_calls || []);
+    }
+    async function loadOrchConfig() {
+      const res = await fetch("/internal/observer/orchestrator/config", {headers: headers()});
+      const data = await res.json();
+      document.getElementById("orchModel").value = data.default_model || "";
+      document.getElementById("orchStrategy").value = data.model_strategy || "";
+      document.getElementById("orchPromptBudget").value = data.prompt_token_budget ?? 0;
+      document.getElementById("orchContextBudget").value = data.context_token_budget ?? 0;
+      document.getElementById("orchToolSteps").value = data.max_tool_steps ?? 0;
+      document.getElementById("orchWinInit").value = data.window_initial ?? 0;
+      document.getElementById("orchWinStep").value = data.window_step ?? 0;
+      document.getElementById("orchWinMax").value = data.window_max ?? 0;
+      document.getElementById("orchMock").checked = !!data.mock_mode;
+      log("orchAnswer", data);
+    }
+    async function saveOrchConfig() {
+      const payload = {
+        default_model: document.getElementById("orchModel").value || null,
+        prompt_token_budget: Number(document.getElementById("orchPromptBudget").value || 0) || null,
+        context_token_budget: Number(document.getElementById("orchContextBudget").value || 0) || null,
+        max_tool_steps: Number(document.getElementById("orchToolSteps").value || 0) || null,
+        window_initial: Number(document.getElementById("orchWinInit").value || 0) || null,
+        window_step: Number(document.getElementById("orchWinStep").value || 0) || null,
+        window_max: Number(document.getElementById("orchWinMax").value || 0) || null,
+        mock_mode: document.getElementById("orchMock").checked
+      };
+      const strategy = document.getElementById("orchStrategy").value;
+      if (strategy) payload.model_strategy = strategy;
+      const res = await fetch("/internal/observer/orchestrator/config", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
+      log("orchAnswer", await res.json());
+    }
+    async function loadLLMConfig() {
+      const res = await fetch("/internal/observer/llm/config", {headers: headers()});
+      const data = await res.json();
+      document.getElementById("llmModel").value = data.default_model || "";
+      document.getElementById("llmToolSteps").value = data.max_tool_steps ?? 0;
+      document.getElementById("llmJsonMode").checked = !!data.enable_json_mode;
+      document.getElementById("llmMock").checked = !!data.mock_mode;
+      document.getElementById("llmRuntimeUrl").value = data.llm_runtime_url || "";
+      log("llmConfigLog", data);
+    }
+    async function saveLLMConfig() {
+      const payload = {
+        default_model: document.getElementById("llmModel").value || null,
+        max_tool_steps: Number(document.getElementById("llmToolSteps").value || 0) || null,
+        enable_json_mode: document.getElementById("llmJsonMode").checked,
+        mock_mode: document.getElementById("llmMock").checked,
+        llm_runtime_url: document.getElementById("llmRuntimeUrl").value || null
+      };
+      const res = await fetch("/internal/observer/llm/config", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
+      log("llmConfigLog", await res.json());
     }
     async function loadRetrievalConfig() {
       const res = await fetch("/internal/observer/retrieval/config", {headers: headers()});

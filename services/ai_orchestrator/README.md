@@ -1,6 +1,6 @@
 # AI Orchestrator Skeleton
 
-Implements the coordinator described in `docs/ai_orchestrator_spec.md`. The FastAPI service exposes `/internal/orchestrator/respond` to receive user queries, call Retrieval Service, forward context to LLM Service, pass outputs through Safety Service, and return a final structured answer.
+Implements the coordinator described in `docs/ai_orchestrator_spec.md`. The FastAPI service exposes `/internal/orchestrator/respond` to receive user queries, call Retrieval Service for section summaries, orchestrate tool-calling with MCP proxy using progressive window expansion, and return a structured answer with provenance.
 
 ## Quick start
 
@@ -20,10 +20,16 @@ uvicorn ai_orchestrator.main:app --reload
 | `ORCH_PORT` | `8070` | Bind port |
 | `ORCH_LOG_LEVEL` | `info` | Logging level |
 | `ORCH_RETRIEVAL_URL` | – | Base URL of Retrieval Service |
-| `ORCH_LLM_URL` | – | URL for `POST /internal/llm/generate` |
-| `ORCH_SAFETY_URL` | – | URL for `POST /internal/safety/output-check` |
-| `ORCH_MODEL_STRATEGY` | `rag_default` | Controls prompt/flow strategy |
+| `ORCH_MCP_PROXY_URL` | – | MCP proxy execute endpoint |
+| `ORCH_LLM_RUNTIME_URL` | – | URL for OpenAI-style runtime (tool calling) |
+| `ORCH_DEFAULT_MODEL` | `gpt-4o-mini` | Model name for runtime |
+| `ORCH_MODEL_STRATEGY` | `rag_mcp` | Controls prompt/flow strategy |
 | `ORCH_PROMPT_TOKEN_BUDGET` | `4096` | Max tokens to send to LLM |
+| `ORCH_CONTEXT_TOKEN_BUDGET` | `4096` | Max tokens accumulated from MCP results |
+| `ORCH_MAX_TOOL_STEPS` | `4` | Tool-call loop limit |
+| `ORCH_WINDOW_INITIAL` | `1` | Initial chunk window (before/after) |
+| `ORCH_WINDOW_STEP` | `1` | Increment per repeated fetch |
+| `ORCH_WINDOW_MAX` | `5` | Max window radius |
 | `ORCH_RETRY_ATTEMPTS` | `1` | Retries for transient errors |
 | `ORCH_MOCK_MODE` | `true` | Use in-memory mocks for Retrieval/LLM/Safety |
 

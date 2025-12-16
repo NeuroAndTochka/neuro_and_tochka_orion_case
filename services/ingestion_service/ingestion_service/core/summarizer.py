@@ -26,9 +26,7 @@ class Summarizer:
             "Без воды, без списков, только факты."
         )
         self.model = settings.summary_model
-        self.max_tokens = 120
         self.use_roles = True
-        self.timeout = 30.0
 
         self._client = None
         if not self._mock and OpenAI:
@@ -68,9 +66,6 @@ class Summarizer:
                 resp = self._client.chat.completions.create(
                     model=self.model,
                     messages=messages,
-                    # max_tokens=self.max_tokens,
-                    # temperature=0.2,
-                    # timeout=self.timeout,
                 )
                 raw_content = (
                     resp.choices[0].message.content if resp and resp.choices else ""
@@ -118,7 +113,6 @@ class Summarizer:
         return {
             "system_prompt": self.system_prompt,
             "model": self.model,
-            "max_tokens": self.max_tokens,
             "use_roles": self.use_roles,
         }
 
@@ -127,15 +121,12 @@ class Summarizer:
         *,
         system_prompt: str | None = None,
         model: str | None = None,
-        max_tokens: int | None = None,
         use_roles: bool | None = None,
     ) -> dict:
         if system_prompt is not None:
             self.system_prompt = system_prompt
         if model is not None:
             self.model = model
-        if max_tokens is not None:
-            self.max_tokens = max_tokens
         if use_roles is not None:
             self.use_roles = use_roles
         return self.get_config()

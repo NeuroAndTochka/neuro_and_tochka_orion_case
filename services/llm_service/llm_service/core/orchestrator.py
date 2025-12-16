@@ -25,6 +25,40 @@ class LLMOrchestrator:
         self.runtime = LLMRuntimeClient(settings, http_client)
         self.mcp = MCPClient(settings, http_client)
 
+    async def chat_proxy(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """OpenAI-style passthrough for chat completions (used by AI orchestrator)."""
+        result = await self.runtime.chat_completion(payload)
+        usage = result.usage or {}
+        if result.type == "tool_call":
+            # Return minimal OpenAI-compatible tool_call response
+            args = result.tool_arguments
+            if isinstance(args, dict):
+                try:
+                    import json
+                    args = json.dumps(args)
+                except Exception:
+                    args = "{}"
+            tool_call = {
+                "id": "call_0",
+                "type": "function",
+                "function": {
+                    "name": result.tool_name or "unknown",
+                    "arguments": args or "{}",
+                },
+            }
+            message = {"role": "assistant", "content": None, "tool_calls": [tool_call]}
+        else:
+            message = {"role": "assistant", "content": result.content}
+        return {
+            "choices": [{"message": message}],
+            "usage": {
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0),
+            },
+            "model": self.settings.default_model,
+        }
+
     async def generate(self, request: GenerateRequest) -> GenerateResponse:
         trace_id = request.trace_id or "trace-unknown"
         messages = build_rag_prompt(request.system_prompt, request.messages, request.context_chunks)
@@ -84,12 +118,13 @@ class LLMOrchestrator:
             "model": self.settings.default_model,
             "messages": messages,
             "context": context_payload,
-            "max_tokens": params.max_tokens or self.settings.max_completion_tokens,
-            "temperature": params.temperature,
-            "top_p": params.top_p,
-            "presence_penalty": params.presence_penalty,
-            "frequency_penalty": params.frequency_penalty,
         }
+        if params.top_p is not None:
+            payload["top_p"] = params.top_p
+        if params.presence_penalty is not None:
+            payload["presence_penalty"] = params.presence_penalty
+        if params.frequency_penalty is not None:
+            payload["frequency_penalty"] = params.frequency_penalty
         if params.stop:
             payload["stop"] = params.stop
         if self.settings.enable_json_mode:

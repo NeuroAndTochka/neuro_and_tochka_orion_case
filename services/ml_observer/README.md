@@ -21,7 +21,7 @@ uvicorn ml_observer.main:app --reload --port 8085
 | `OBS_MOCK_MODE` | `true` | Включает мок-ответы без реальных вызовов внешних сервисов |
 | `OBS_DB_DSN` | `sqlite+aiosqlite:///./ml_observer.db` | DSN для БД экспериментов |
 | `OBS_ALLOWED_TENANT` | `observer_tenant` | Tenant для тестовых действий |
-| `OBS_INGESTION_BASE_URL`, `OBS_DOCUMENT_BASE_URL`, `OBS_RETRIEVAL_BASE_URL`, `OBS_LLM_BASE_URL` | Базовые URL зависимых сервисов (используются, если `mock_mode=false`) |
+| `OBS_INGESTION_BASE_URL`, `OBS_DOCUMENT_BASE_URL`, `OBS_RETRIEVAL_BASE_URL`, `OBS_LLM_BASE_URL`, `OBS_ORCHESTRATOR_BASE_URL` | Базовые URL зависимых сервисов (используются, если `mock_mode=false`) |
 | `OBS_MINIO_ENDPOINT`, `OBS_MINIO_BUCKET`, `OBS_MINIO_ACCESS_KEY`, `OBS_MINIO_SECRET_KEY` | Настройки MinIO/S3 для артефактов (зарезервировано) |
 
 ## Эндпойнты (v1)
@@ -48,3 +48,13 @@ docker build -t visior-ml-observer .
 docker run --rm -p 8085:8085 -e OBS_MOCK_MODE=true visior-ml-observer
 ```
 Для боевого запуска пробросьте `OBS_DB_DSN` (PostgreSQL) и URL зависимых сервисов.
+
+### UI / интеграция со стэком
+- В браузере откройте `http://localhost:8085/ui` — это консоль для быстрой проверки ingestion/retrieval.
+- Для работы против сервисов из `docker-compose` задайте:
+  - `OBS_RETRIEVAL_BASE_URL=http://retrieval_service:8040`
+  - `OBS_INGESTION_BASE_URL=http://ingestion_service:8050`
+  - `OBS_DOCUMENT_BASE_URL=http://document_service:8060`
+  - `OBS_LLM_BASE_URL=http://llm_service:8090` (если нужен dry-run LLM)
+  - `OBS_ORCHESTRATOR_BASE_URL=http://ai_orchestrator:8070` (для теста RAG+MCP)
+- Убедитесь, что `X-Tenant-ID` в UI выставлен в `observer_tenant` (по умолчанию).

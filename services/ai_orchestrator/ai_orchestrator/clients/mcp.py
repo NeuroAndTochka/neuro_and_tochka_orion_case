@@ -5,7 +5,7 @@ from typing import Any, Dict
 import httpx
 from fastapi import HTTPException, status
 
-from llm_service.config import Settings
+from ai_orchestrator.config import Settings
 
 
 class MCPClient:
@@ -15,7 +15,15 @@ class MCPClient:
 
     async def execute(self, tool_name: str, arguments: Dict[str, Any], user: Dict[str, Any], trace_id: str | None) -> Dict[str, Any]:
         if self.settings.mock_mode:
-            return {"status": "ok", "result": {"text": "Mock snippet", "doc_id": arguments.get("doc_id")}, "trace_id": trace_id}
+            return {
+                "status": "ok",
+                "result": {
+                    "text": f"Mock text for {tool_name}",
+                    "doc_id": arguments.get("doc_id"),
+                    "section_id": arguments.get("section_id"),
+                },
+                "trace_id": trace_id,
+            }
         if not self.settings.mcp_proxy_url:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="MCP proxy URL missing")
         payload = {

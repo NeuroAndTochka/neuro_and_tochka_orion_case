@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     rate_limit_calls: int = 10
     rate_limit_tokens: int = 2000
     mock_mode: bool = True
+    retrieval_window_url: str | None = None
+    retrieval_timeout: float = 5.0
+    max_chunk_window: int = 5
 
     blocklist_keywords: List[str] = ["leak", "dump", "exfiltrate"]
 

@@ -1,79 +1,17 @@
 # LLM Service
 
 ## Назначение
-LLM Service инкапсулирует работу с LLM runtime и MCP-инструментами. Он принимает подготовленный RAG-запрос от оркестратора, строит промпт, управляет итерациями tool-call'ов и возвращает нормализованный `GenerateResponse`.
+Обёртка над OpenAI-совместимым runtime с поддержкой MCP tool-calls. Принимает `GenerateRequest` от AI Orchestrator и возвращает финальный ответ, usage и трейс инструментов.
 
-## Архитектура
-- FastAPI приложение (`services/llm_service`).
-- `core/orchestrator.LLMOrchestrator` — главный класс сервиса.
-- Клиенты: `LLMRuntimeClient`, `MCPClient`.
-- Конфиг через `LLM_SERVICE_*`.
+## Эндпоинты (`/internal/llm`)
+- `POST /generate` — поля: `system_prompt`, `messages[{role,content}]`, `context_chunks[{doc_id, section_id?, text, page_start?, page_end?}]`, `generation_params` (top_p, penalties, stop), `trace_id?`. Ответ: `answer`, `used_tokens{prompt,completion}`, `tools_called[]`, `meta{model_name, trace_id, tool_steps}`.
+- `/health` — `{"status":"ok"}`.
 
-## Конфигурация
-| Переменная | Описание |
-| --- | --- |
-| `LLM_SERVICE_LLM_RUNTIME_URL` | Endpoint модели. |
-| `LLM_SERVICE_DEFAULT_MODEL` | Идентификатор модели по умолчанию. |
-| `LLM_SERVICE_MAX_TOOL_STEPS` | Лимит итераций tool-call. |
-| `LLM_SERVICE_MAX_COMPLETION_TOKENS` | Максимум токенов в ответе. |
-| `LLM_SERVICE_ENABLE_JSON_MODE` | Принудительный json-ответ. |
-| `LLM_SERVICE_MCP_PROXY_URL` | URL призна инструментов. |
-| `LLM_SERVICE_MOCK_MODE` | Возвращать заглушки.
+## Поведение
+- `mock_mode=true` (дефолт) имитирует tool-call или финальный ответ без реального runtime.
+- При tool-call вызывает MCP proxy (`MCPClient`) и добавляет `TOOL_RESULT` в историю сообщений.
+- Ограничение по количеству шагов — `max_tool_steps`; превышение → 400 с `LLM_LIMIT_EXCEEDED`.
+- Может включать JSON mode (`enable_json_mode`) при построении payload для runtime.
 
-## API
-### `POST /internal/llm/generate`
-**Request**
-```json
-{
-  "mode": "rag",
-  "system_prompt": "You are Orion",
-  "messages": [
-    {"role": "user", "content": "Расскажи про LDAP"}
-  ],
-  "context_chunks": [
-    {
-      "doc_id": "doc_1",
-      "section_id": "sec_intro",
-      "text": "LDAP — Lightweight...",
-      "page_start": 1,
-      "page_end": 2
-    }
-  ],
-  "generation_params": {
-    "max_tokens": 400,
-    "temperature": 0.2
-  },
-  "trace_id": "trace-abc"
-}
-```
-**Response**
-```json
-{
-  "answer": "LDAP — ...",
-  "used_tokens": {"prompt": 120, "completion": 85},
-  "tools_called": [
-    {
-      "name": "read_doc_section",
-      "arguments": {"doc_id": "doc_1", "section_id": "sec_intro"},
-      "result_summary": "2 pages"
-    }
-  ],
-  "meta": {
-    "model_name": "gpt-4o-mini",
-    "trace_id": "trace-abc",
-    "tool_steps": 1
-  }
-}
-```
-
-## MCP инструменты
-- Реестр объявлен в `mcp_tools_proxy`. LLM Service лишь инициирует вызовы по именам.
-- Каждый tool-call возвращает `status` и `result`. Следите, чтобы `result_summary` был строкой (используется UI).
-
-## Расширение
-- Для новых режимов промпта добавляйте функции в `core/prompt.py` и прокидывайте флаги через `GenerateRequest`.
-- При добавлении новых параметров генерации обновляйте `schemas.py`, `GenerationParams` и OpenAPI.
-
-## Mock требования
-- Mock payload должен включать корректные структуры `used_tokens`, `tools_called`, `meta`.
-- Если вы добавляете дополнительное поле в ответ (например, `confidence`), сразу добавьте значение в mock (`LLMRuntimeClient._mock_response`) и тесты.
+## Конфигурация (`LLM_SERVICE_*`)
+`llm_runtime_url`, `default_model`, `max_tool_steps`, `enable_json_mode`, `mcp_proxy_url`, `mock_mode`, `host/port/log_level`.

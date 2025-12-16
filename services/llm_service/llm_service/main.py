@@ -16,6 +16,7 @@ configure_logging(settings.log_level)
 async def lifespan(app: FastAPI):
     async with httpx.AsyncClient() as client:
         app.state.orchestrator = LLMOrchestrator(settings, client)
+        app.state.settings = settings
         yield
 
 

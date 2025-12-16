@@ -12,10 +12,9 @@ class Settings(BaseSettings):
     log_level: str = "info"
 
     llm_runtime_url: str | None = None
+    runtime_api_key: str | None = None
     default_model: str = "mock-model"
     max_tool_steps: int = 3
-    max_prompt_tokens: int = 4096
-    max_completion_tokens: int = 512
     enable_json_mode: bool = True
     mcp_proxy_url: str | None = None
     mock_mode: bool = True

@@ -2,6 +2,8 @@
 
 Implements the Model Context Protocol tool executor described in `docs/mcp_tools_proxy_spec.md`. The FastAPI service exposes `/internal/mcp/execute` for single tool-calls and `/health` for heartbeat. Each tool enforces tenant isolation, token/page limits, and rate limits before returning sanitized snippets back to the LLM service.
 
+The proxy now includes `read_chunk_window`, which pulls verbatim chunk text through Retrieval Service when summaries are insufficient.
+
 ## Quick start
 
 ```bash
@@ -23,6 +25,8 @@ uvicorn mcp_tools_proxy.main:app --reload
 | `MCP_PROXY_MAX_TEXT_BYTES` | `20480` | Limit per response (≈20 KB) |
 | `MCP_PROXY_RATE_LIMIT_CALLS` | `10` | Calls per doc & generation |
 | `MCP_PROXY_RATE_LIMIT_TOKENS` | `2000` | Approx token budget per response |
+| `MCP_PROXY_RETRIEVAL_WINDOW_URL` | – | Retrieval chunk window endpoint (e.g. `http://retrieval_service:8040/internal/retrieval/chunks/window`) |
+| `MCP_PROXY_MAX_CHUNK_WINDOW` | `5` | Max chunks returned by `read_chunk_window` |
 | `MCP_PROXY_MOCK_MODE` | `true` | Use in-memory repositories instead of real stores |
 
 Set `MCP_PROXY_MOCK_MODE=false` and wire actual repositories/clients when backends are available.

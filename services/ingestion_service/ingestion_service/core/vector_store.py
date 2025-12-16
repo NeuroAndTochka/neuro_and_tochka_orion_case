@@ -30,14 +30,15 @@ class VectorStore:
             self._chunks: list[dict] = []
 
     def upsert_document(self, doc_id: str, tenant_id: str, embedding: Sequence[float], metadata: dict) -> None:
+        meta = {"tenant_id": tenant_id, "doc_id": doc_id, **{k: v for k, v in metadata.items() if v is not None}}
         if self.enabled and self.doc_collection:
             self.doc_collection.upsert(
                 ids=[doc_id],
                 embeddings=[list(embedding)],
-                metadatas=[{"tenant_id": tenant_id, "doc_id": doc_id, **metadata}],
+                metadatas=[meta],
             )
         else:
-            self._docs.append({"id": doc_id, "tenant_id": tenant_id, "embedding": list(embedding), "metadata": {"doc_id": doc_id, **metadata}})
+            self._docs.append({"id": doc_id, "tenant_id": tenant_id, "embedding": list(embedding), "metadata": meta})
 
     @staticmethod
     def _sanitize_meta(meta: dict) -> dict:
@@ -80,10 +81,12 @@ class VectorStore:
         tenant_id: str,
         chunk_embeddings: List[Sequence[float]],
         chunk_pairs: List[tuple[str, str]],
+        extra_meta: dict | None = None,
     ) -> None:
         ids = []
         metas = []
         embs = []
+        extra = {k: v for k, v in (extra_meta or {}).items() if v is not None}
         for (chunk_id, chunk_text), emb in zip(chunk_pairs, chunk_embeddings):
             ids.append(f"{doc_id}:{chunk_id}")
             page_num, chunk_idx = self._parse_chunk_id(chunk_id)
@@ -95,6 +98,8 @@ class VectorStore:
                 "page": page_num,
                 "chunk_index": chunk_idx,
             }
+            if extra:
+                raw_meta.update(extra)
             metas.append(self._sanitize_meta(raw_meta))
             embs.append(list(emb))
         if self.enabled and self.chunk_collection:
