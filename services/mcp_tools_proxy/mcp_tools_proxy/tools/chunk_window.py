@@ -63,6 +63,9 @@ class ReadChunkWindowTool(BaseTool):
             after=after,
             tenant_id=context.user.tenant_id,
             trace_id=context.trace_id,
+            requested_chunks=before + after + 1,
+            max_window_limit=getattr(self.settings, "max_chunk_window", 5),
+            limit_source="settings.max_chunk_window",
         )
         response = await self.retrieval_client.fetch_chunk_window(
             tenant_id=context.user.tenant_id,
@@ -70,6 +73,7 @@ class ReadChunkWindowTool(BaseTool):
             anchor_chunk_id=anchor_id,
             window_before=before,
             window_after=after,
+            trace_id=context.trace_id,
         )
         chunks = response.get("chunks") if isinstance(response, dict) else None
         if not chunks:

@@ -35,3 +35,22 @@ async def test_read_chunk_window_uses_retrieval_service() -> None:
         assert data["status"] == "ok"
         assert data["result"]["chunks"]
         assert data["result"]["chunks"][0]["chunk_id"] == "chunk_1"
+
+
+@pytest.mark.anyio
+async def test_read_chunk_window_limit_error_is_structured() -> None:
+    registry = ToolRegistry(Settings(mock_mode=False, max_chunk_window=5))
+    req = {
+        "tool_name": "read_chunk_window",
+        "arguments": {"doc_id": "doc_1", "anchor_chunk_id": "chunk_1", "window_before": 3, "window_after": 3},
+        "user": {"user_id": "u", "tenant_id": "tenant_1"},
+        "trace_id": "trace-limit",
+    }
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=mcp_app), base_url="http://mcp.local") as client:
+        mcp_app.state.tool_registry = registry
+        resp = await client.post("/internal/mcp/execute", json=req)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "error"
+    assert data["error"]["code"] == "WINDOW_TOO_LARGE"
+    assert "Requested 7 chunks" in data["error"]["message"]

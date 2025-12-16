@@ -24,6 +24,7 @@ class RetrievalClient:
         anchor_chunk_id: str,
         window_before: int,
         window_after: int,
+        trace_id: str | None = None,
     ) -> Dict[str, Any]:
         payload = {
             "tenant_id": tenant_id,
@@ -31,6 +32,7 @@ class RetrievalClient:
             "anchor_chunk_id": anchor_chunk_id,
             "window_before": window_before,
             "window_after": window_after,
+            "trace_id": trace_id,
         }
         self._logger.info(
             "retrieval_chunk_window_request",
@@ -40,6 +42,7 @@ class RetrievalClient:
             before=window_before,
             after=window_after,
             tenant_id=tenant_id,
+            trace_id=trace_id,
         )
         try:
             async with httpx.AsyncClient(transport=self._transport) as client:
@@ -72,5 +75,6 @@ class RetrievalClient:
             doc_id=doc_id,
             anchor_chunk_id=anchor_chunk_id,
             count=len(body.get("chunks", [])) if isinstance(body, dict) else None,
+            trace_id=trace_id,
         )
         return body

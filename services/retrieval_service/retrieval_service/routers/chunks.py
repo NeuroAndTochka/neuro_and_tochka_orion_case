@@ -26,6 +26,9 @@ async def chunk_window(
     anchor_id = payload.get("anchor_chunk_id")
     before = int(payload.get("window_before") or 1)
     after = int(payload.get("window_after") or 1)
+    trace_id = payload.get("trace_id") or "trace-unknown"
+    requested_count = before + after + 1
+    limit = getattr(settings, "max_chunk_window", None)
     if not tenant_id or not doc_id or not anchor_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="tenant_id, doc_id, anchor_chunk_id required")
     logger.info(
@@ -35,6 +38,8 @@ async def chunk_window(
         anchor_chunk_id=anchor_id,
         window_before=before,
         window_after=after,
+        requested_chunks=requested_count,
+        trace_id=trace_id,
     )
     records = []
     collection = getattr(index, "collection", None)
@@ -47,6 +52,7 @@ async def chunk_window(
                 doc_id=doc_id,
                 include=include,
                 limit=1000,
+                trace_id=trace_id,
             )
             chunks = collection.get(  # type: ignore[attr-defined]
                 where={"$and": [{"tenant_id": tenant_id}, {"doc_id": doc_id}]},
@@ -69,6 +75,7 @@ async def chunk_window(
             "chunk_window_retrieved_from_chroma",
             doc_id=doc_id,
             count=len(records),
+            trace_id=trace_id,
         )
     else:
         docs = getattr(index, "documents", None)
@@ -87,6 +94,7 @@ async def chunk_window(
             "chunk_window_retrieved_from_memory",
             doc_id=doc_id,
             count=len(records),
+            trace_id=trace_id,
         )
     if not records:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chunks_not_found")
@@ -98,9 +106,21 @@ async def chunk_window(
     end = min(len(records), anchor_pos + after + 1)
     window = records[start:end]
     logger.info(
+        "chunk_window_stats",
+        tenant_id=tenant_id,
+        doc_id=doc_id,
+        anchor_chunk_id=anchor_id,
+        trace_id=trace_id,
+        requested_chunks=requested_count,
+        available_chunks=len(records),
+        returned=len(window),
+        limit_applied=limit,
+    )
+    logger.info(
         "chunk_window_response",
         doc_id=doc_id,
         anchor_chunk_id=anchor_id,
         returned=len(window),
+        trace_id=trace_id,
     )
     return {"chunks": window}

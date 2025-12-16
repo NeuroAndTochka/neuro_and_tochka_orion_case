@@ -97,6 +97,17 @@ class Orchestrator:
         sections = self._select_sections(retrieval_hits)
         context = build_context(sections, self.settings.prompt_token_budget)
         section_chunk_map = self._build_section_chunk_index(sections)
+        summaries_len = sum(len(item.get("summary") or "") for item in context)
+        self._logger.info(
+            "orchestrator_context_prepared",
+            trace_id=trace_id,
+            tenant_id=user_context.tenant_id,
+            sections=len(context),
+            doc_ids=sorted({c.get("doc_id") for c in context if c.get("doc_id")}),
+            section_ids=[c.get("section_id") for c in context if c.get("section_id")],
+            summary_chars=summaries_len,
+            chunk_anchor_map=len(section_chunk_map),
+        )
         messages = self._build_messages(request.query, context)
         tools = self._tool_schemas()
         usage = {"prompt": 0, "completion": 0}
@@ -110,12 +121,18 @@ class Orchestrator:
                 "tools": tools,
                 "context": context,
             }
+            tool_results = [
+                m for m in messages if isinstance(m, dict) and m.get("role") == "assistant" and str(m.get("content", "")).startswith("TOOL_RESULT")
+            ]
             self._logger.info(
                 "orchestrator_llm_request",
                 trace_id=trace_id,
                 tenant_id=user_context.tenant_id,
                 model=payload["model"],
                 empty_context=not bool(context),
+                context_sections=len(context),
+                tool_results=len(tool_results),
+                tool_result_chars=sum(len(str(m.get("content", ""))) for m in tool_results),
                 step=step,
             )
             try:
@@ -327,6 +344,18 @@ class Orchestrator:
         else:
             tool_to_call = "read_doc_section"
 
+        self._logger.info(
+            "orchestrator_tool_call",
+            trace_id=trace_id,
+            tenant_id=user.tenant_id,
+            tool=tool_to_call,
+            doc_id=doc_id,
+            section_id=section_id,
+            anchor_chunk_id=anchor_chunk_id,
+            window_before=window_before,
+            window_after=window_after,
+            requested_chunks=window_before + window_after + 1 if anchor_chunk_id else None,
+        )
         payload_user = {"user_id": user.user_id, "tenant_id": user.tenant_id, "roles": user.roles}
         result = await self.mcp.execute(tool_to_call, args, payload_user, trace_id)
         text = ""

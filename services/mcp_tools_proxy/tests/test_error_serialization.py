@@ -7,7 +7,9 @@ from mcp_tools_proxy.schemas import MCPExecuteRequest, MCPUser
 
 
 class FailingRetrievalClient:
-    async def fetch_chunk_window(self, *, tenant_id: str, doc_id: str, anchor_chunk_id: str, window_before: int, window_after: int):
+    async def fetch_chunk_window(
+        self, *, tenant_id: str, doc_id: str, anchor_chunk_id: str, window_before: int, window_after: int, trace_id: str | None = None
+    ):
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"code": "retrieval_error", "message": {"detail": "Expected include item to be one of ... got ids"}},
