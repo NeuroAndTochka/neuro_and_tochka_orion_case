@@ -11,8 +11,8 @@ from ai_orchestrator.schemas import OrchestratorRequest, UserContext
 
 
 @pytest.mark.anyio
-async def test_progressive_window_expands():
-    settings = Settings(mock_mode=True, window_initial=1, window_step=1, window_max=3)
+async def test_progressive_window_respects_radius_cap():
+    settings = Settings(mock_mode=True, window_radius=2)
     async with httpx.AsyncClient() as client:
         orchestrator = Orchestrator(settings, client)
 
@@ -24,7 +24,9 @@ async def test_progressive_window_expands():
 
         orchestrator.mcp.execute = fake_execute  # type: ignore[assignment]
 
-        window_state = ProgressiveWindowState(settings.window_initial, settings.window_step, settings.window_max)
+        window_state = ProgressiveWindowState(
+            initial=min(1, settings.window_radius), step=1, max_window=settings.window_radius
+        )
         section_chunk_map = {"sec_intro": "chunk_1"}
         await orchestrator._execute_tool(
             "read_chunk_window", {"doc_id": "doc_1", "section_id": "sec_intro"}, section_chunk_map, window_state, UserContext(user_id="u", tenant_id="t"), "trace"
@@ -32,9 +34,42 @@ async def test_progressive_window_expands():
         await orchestrator._execute_tool(
             "read_chunk_window", {"doc_id": "doc_1", "section_id": "sec_intro"}, section_chunk_map, window_state, UserContext(user_id="u", tenant_id="t"), "trace"
         )
+        await orchestrator._execute_tool(
+            "read_chunk_window", {"doc_id": "doc_1", "section_id": "sec_intro"}, section_chunk_map, window_state, UserContext(user_id="u", tenant_id="t"), "trace"
+        )
 
-        assert calls[0][1]["window_before"] == 1
-        assert calls[1][1]["window_before"] == 2  # expanded
+        assert [c[1]["window_before"] for c in calls] == [1, 2, 2]
+        assert all(c[1]["window_after"] <= settings.window_radius for c in calls)
+
+
+@pytest.mark.anyio
+async def test_orchestrator_clamps_llm_requested_window_to_radius():
+    settings = Settings(mock_mode=True, window_radius=1)
+    async with httpx.AsyncClient() as client:
+        orchestrator = Orchestrator(settings, client)
+
+        calls = []
+
+        async def fake_execute(tool_name, arguments, user, trace_id):
+            calls.append((tool_name, arguments))
+            return {"status": "ok", "result": {"chunks": [{"text": "hi"}]}}
+
+        orchestrator.mcp.execute = fake_execute  # type: ignore[assignment]
+
+        window_state = ProgressiveWindowState(initial=min(1, settings.window_radius), step=1, max_window=settings.window_radius)
+        section_chunk_map = {"sec_intro": "chunk_1"}
+        await orchestrator._execute_tool(
+            "read_chunk_window",
+            {"doc_id": "doc_1", "section_id": "sec_intro", "window_before": 5, "window_after": 3},
+            section_chunk_map,
+            window_state,
+            UserContext(user_id="u", tenant_id="t"),
+            "trace",
+        )
+
+        assert calls
+        assert calls[0][1]["window_before"] == settings.window_radius
+        assert calls[0][1]["window_after"] == settings.window_radius
 
 
 @pytest.mark.anyio
@@ -115,3 +150,16 @@ async def test_orchestrator_uses_mcp_when_no_chunks():
             for msg in runtime_calls[-1]["messages"]
             if isinstance(msg, dict) and msg.get("role") == "assistant"
         )
+
+
+@pytest.mark.anyio
+async def test_tool_schema_advertises_radius_limits():
+    settings = Settings(mock_mode=True, window_radius=4)
+    async with httpx.AsyncClient() as client:
+        orchestrator = Orchestrator(settings, client)
+        tools = orchestrator._tool_schemas()
+    chunk_tool = next(t for t in tools if t["function"]["name"] == "read_chunk_window")
+    props = chunk_tool["function"]["parameters"]["properties"]
+    assert props["window_before"]["maximum"] == settings.window_radius
+    assert props["window_after"]["maximum"] == settings.window_radius
+    assert props["radius"]["maximum"] == settings.window_radius

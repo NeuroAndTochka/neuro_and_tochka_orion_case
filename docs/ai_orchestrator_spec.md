@@ -23,7 +23,7 @@ Payload:
 Ошибки: 400 при отсутствии user context или превышении лимитов tool-loop/контекста; 502 при ошибках downstream.
 
 ### `GET/POST /internal/orchestrator/config`
-Возвращает/принимает: `default_model`, `prompt_token_budget`, `context_token_budget`, `max_tool_steps`, `window_initial`, `window_step`, `window_max`, `mock_mode`.
+Возвращает/принимает: `default_model`, `prompt_token_budget`, `context_token_budget`, `max_tool_steps`, `window_radius` (R, общее окно = 2R+1, поступает из `RAG_WINDOW_RADIUS`/`ORCH_WINDOW_RADIUS`, легаси `window_max` → R), `mock_mode`.
 
 ### `/health`
 `{"status":"ok"}`.
@@ -33,7 +33,7 @@ Payload:
 2. Делает `RetrievalClient.search` с капом `max_results<=50`, добавляет флаги `enable_filters` из конфигурации; поле `text` в hits отбрасывается.
 3. В `build_context` обрезает summary до `prompt_token_budget*4` символов и строит первый prompt: только query + список секций (doc_id/section_id/summary/score/pages), без raw текста; системные сообщения явно говорят, что полного текста нет и нужны MCP-инструменты.
 4. Tool-loop: LLM runtime может вернуть `tool_call`; оркестратор выбирает `read_chunk_window` если известен anchor_chunk_id (первый chunk секции или chunk_id из hit), иначе принудительно падает на `read_doc_section`.
-5. Прогрессивное окно: `window_initial` → +`window_step` до `window_max` на повторных обращениях к той же секции; учитывает prompt tokens + текст из tool-результатов и режет при превышении `context_token_budget`.
+5. Прогрессивное окно: радиус `R` (per-side). По умолчанию растёт 1 → 2 → ... → `R`, но не превышает `window_radius` и не просит больше, чем разрешено MCP proxy; учитывает prompt tokens + текст из tool-результатов и режет при превышении `context_token_budget`.
 6. `mock_mode=true` (дефолт) эмулирует retrieval/LLM/MCP ответы без сетевых вызовов.
 
 ## 4. Зависимости
@@ -42,7 +42,7 @@ Payload:
 - **MCP Tools Proxy**: `read_chunk_window`, `read_doc_section`.
 
 ## 5. Конфигурация (`ORCH_*`)
-`retrieval_url`, `mcp_proxy_url`, `llm_runtime_url`, `default_model`, `prompt_token_budget`, `context_token_budget`, `max_tool_steps`, `window_initial`, `window_step`, `window_max`, `retry_attempts`, `mock_mode`, `host/port/log_level`.
+`retrieval_url`, `mcp_proxy_url`, `llm_runtime_url`, `default_model`, `prompt_token_budget`, `context_token_budget`, `max_tool_steps`, `window_radius` (`RAG_WINDOW_RADIUS`/`ORCH_WINDOW_RADIUS`, легаси `window_max`/`MCP_PROXY_MAX_CHUNK_WINDOW` → `min(window_max, floor((total-1)/2))`), `retry_attempts`, `mock_mode`, `host/port/log_level`.
 
 ## 6. Ограничения
 - Output safety не вызывается (пока) — отвечает только input safety от Gateway.

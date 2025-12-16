@@ -41,6 +41,7 @@ services:
       MCP_PROXY_LOG_LEVEL: debug
       MCP_PROXY_RETRIEVAL_WINDOW_URL: http://retrieval_service:8040/internal/retrieval/chunks/window
       MCP_PROXY_MOCK_MODE: "false"
+      RAG_WINDOW_RADIUS: ${RAG_WINDOW_RADIUS:-2}
     ports:
       - "8082:8082"
     networks:
@@ -82,6 +83,7 @@ services:
       ORCH_MAX_COMPLETION_TOKENS: "512"
       ORCH_CONTEXT_TOKEN_BUDGET: "4096"
       ORCH_MAX_TOOL_STEPS: "4"
+      RAG_WINDOW_RADIUS: ${RAG_WINDOW_RADIUS:-2}
     ports:
       - "8070:8070"
     networks:
@@ -162,6 +164,7 @@ services:
       RETR_EMBEDDING_API_BASE: https://openrouter.ai/api/v1
       RETR_EMBEDDING_API_KEY: ${INGEST_SUMMARY_API_KEY}
       RETR_EMBEDDING_MODEL: baai/bge-m3
+      RAG_WINDOW_RADIUS: ${RAG_WINDOW_RADIUS:-2}
     ports:
       - "8040:8040"
     networks:

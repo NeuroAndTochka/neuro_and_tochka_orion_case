@@ -1,5 +1,7 @@
 # RAG window forensic report
 
+_Note: this report captured the pre-fix state. The code now uses a unified per-side radius `R` (`RAG_WINDOW_RADIUS`) across UI → orchestrator → MCP proxy (validating `before/after<=R`) and Retrieval logs requested/available counts._
+
 ## A1. Trace flow (WINDOW_TOO_LARGE)
 - UI → `ai_orchestrator` `/respond` builds request with tenant/user and calls Retrieval Service search (`services/ai_orchestrator/ai_orchestrator/core/orchestrator.py:52-96`), logging hits/docs/sections/chunks.
 - Retrieval Service `/internal/retrieval/search` logs the query and enforces max_results (`services/retrieval_service/retrieval_service/routers/retrieval.py:18-76`), returning summaries/metadata only (no raw text).

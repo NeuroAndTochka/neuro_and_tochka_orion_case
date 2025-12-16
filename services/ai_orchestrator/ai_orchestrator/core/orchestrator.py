@@ -26,16 +26,17 @@ from ai_orchestrator.schemas import (
 
 class ProgressiveWindowState:
     def __init__(self, initial: int, step: int, max_window: int) -> None:
-        self.initial = initial
-        self.step = step
-        self.max_window = max_window
+        self.max_window = max(0, max_window)
+        self.initial = max(0, min(initial, self.max_window))
+        self.step = max(1, step) if self.max_window > 0 else 1
         self.window_by_section: Dict[str, int] = {}
         self.tokens_used: int = 0
 
     def next_window(self, section_id: str) -> int:
         current = self.window_by_section.get(section_id, self.initial)
-        self.window_by_section[section_id] = min(self.max_window, current + self.step)
-        return current
+        clamped_current = min(current, self.max_window)
+        self.window_by_section[section_id] = min(self.max_window, clamped_current + self.step)
+        return clamped_current
 
     def add_tokens(self, tokens: int) -> None:
         self.tokens_used += max(0, tokens)
@@ -93,6 +94,21 @@ class Orchestrator:
             chunks=steps_chunks,
             latency_ms=retrieval_latency,
         )
+        self._logger.info(
+            "orchestrator_retrieval_hits",
+            trace_id=trace_id,
+            tenant_id=user_context.tenant_id,
+            total_hits=len(retrieval_hits),
+            hits=[
+                {
+                    "doc_id": h.get("doc_id"),
+                    "section_id": h.get("section_id"),
+                    "chunk_id": h.get("chunk_id"),
+                    "score": h.get("score"),
+                }
+                for h in retrieval_hits
+            ],
+        )
 
         sections = self._select_sections(retrieval_hits)
         context = build_context(sections, self.settings.prompt_token_budget)
@@ -111,7 +127,11 @@ class Orchestrator:
         messages = self._build_messages(request.query, context)
         tools = self._tool_schemas()
         usage = {"prompt": 0, "completion": 0}
-        window_state = ProgressiveWindowState(self.settings.window_initial, self.settings.window_step, self.settings.window_max)
+        window_state = ProgressiveWindowState(
+            initial=min(1, self.settings.window_radius) if self.settings.window_radius > 0 else 0,
+            step=1,
+            max_window=self.settings.window_radius,
+        )
         tool_traces: List[ToolCallTrace] = []
 
         for step in range(self.settings.max_tool_steps + 1):
@@ -190,6 +210,14 @@ class Orchestrator:
                 )
             tool_name = result.tool_name or "unknown"
             arguments = result.tool_arguments or {}
+            self._logger.info(
+                "orchestrator_tool_call_raw",
+                trace_id=trace_id,
+                tenant_id=user_context.tenant_id,
+                tool=tool_name,
+                raw_arguments=arguments,
+                max_window_radius=self.settings.window_radius,
+            )
             tool_result, tokens_used = await self._execute_tool(tool_name, arguments, section_chunk_map, window_state, user_context, trace_id)
             window_state.add_tokens(tokens_used)
             if window_state.tokens_used > self.settings.context_token_budget:
@@ -261,6 +289,7 @@ class Orchestrator:
         ]
 
     def _tool_schemas(self) -> List[Dict[str, Any]]:
+        radius = max(0, self.settings.window_radius)
         return [
             {
                 "type": "function",
@@ -273,8 +302,14 @@ class Orchestrator:
                             "doc_id": {"type": "string"},
                             "section_id": {"type": "string"},
                             "anchor_chunk_id": {"type": "string"},
-                            "window_before": {"type": "integer", "minimum": 0},
-                            "window_after": {"type": "integer", "minimum": 0},
+                            "window_before": {"type": "integer", "minimum": 0, "maximum": radius},
+                            "window_after": {"type": "integer", "minimum": 0, "maximum": radius},
+                            "radius": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": radius,
+                                "description": "Optional alias to request the same window before/after the anchor. Total chunks = 2R+1.",
+                            },
                         },
                         "required": ["doc_id", "section_id"],
                     },
@@ -320,9 +355,20 @@ class Orchestrator:
         doc_id = str(arguments.get("doc_id") or "")
         section_id = str(arguments.get("section_id") or "")
         anchor_chunk_id = arguments.get("anchor_chunk_id") or section_chunk_map.get(section_id)
-        window = window_state.next_window(section_id) if section_id else self.settings.window_initial
-        window_before = int(arguments.get("window_before", window))
-        window_after = int(arguments.get("window_after", window))
+        effective_radius = max(0, self.settings.window_radius)
+        window = window_state.next_window(section_id) if section_id else min(1, effective_radius)
+        raw_arguments = dict(arguments)
+
+        if raw_arguments.get("radius") is not None:
+            radius_arg = int(raw_arguments.get("radius") or 0)
+            window_before = radius_arg
+            window_after = radius_arg
+        else:
+            window_before = int(raw_arguments.get("window_before", window))
+            window_after = int(raw_arguments.get("window_after", window))
+
+        window_before = max(0, min(window_before, effective_radius))
+        window_after = max(0, min(window_after, effective_radius))
 
         if not doc_id or not section_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="doc_id and section_id required")
@@ -352,9 +398,11 @@ class Orchestrator:
             doc_id=doc_id,
             section_id=section_id,
             anchor_chunk_id=anchor_chunk_id,
+            raw_arguments=raw_arguments,
             window_before=window_before,
             window_after=window_after,
             requested_chunks=window_before + window_after + 1 if anchor_chunk_id else None,
+            effective_window_radius=effective_radius,
         )
         payload_user = {"user_id": user.user_id, "tenant_id": user.tenant_id, "roles": user.roles}
         result = await self.mcp.execute(tool_to_call, args, payload_user, trace_id)

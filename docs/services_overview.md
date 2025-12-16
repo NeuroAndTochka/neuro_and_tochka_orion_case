@@ -16,8 +16,8 @@
 ## AI Orchestrator
 - **Зачем.** Склеивает Retrieval → LLM runtime → MCP инструменты, формирует ответ и источники.
 - **Эндпоинты.** `/internal/orchestrator/respond`, `/internal/orchestrator/config` (GET/POST), `/health`.
-- **Поведение.** Первый prompt строится только из запроса и summary/метаданных секций (без raw текста) и сообщает LLM про отсутствие полного текста; `text` из Retrieval отбрасывается. Tool-loop использует MCP-инструменты `read_chunk_window`/`read_doc_section`, прогрессивно расширяет окно и контролирует `context_token_budget`. `mock_mode` отдаёт заглушки.
-- **Конфиг.** `ORCH_*`: URLs зависимостей, `default_model`, `prompt_token_budget`, `context_token_budget`, `max_tool_steps`, `window_initial/step/max`, `mock_mode`.
+- **Поведение.** Первый prompt строится только из запроса и summary/метаданных секций (без raw текста) и сообщает LLM про отсутствие полного текста; `text` из Retrieval отбрасывается. Tool-loop использует MCP-инструменты `read_chunk_window`/`read_doc_section`, прогрессивно расширяет окно до радиуса `R` и контролирует `context_token_budget`. `mock_mode` отдаёт заглушки.
+- **Конфиг.** `ORCH_*`: URLs зависимостей, `default_model`, `prompt_token_budget`, `context_token_budget`, `max_tool_steps`, `window_radius` (per-side R, total = 2R+1, из `RAG_WINDOW_RADIUS`/`ORCH_WINDOW_RADIUS`), `mock_mode`; легаси `window_initial/step/max` приводятся к `window_radius`.
 
 ## LLM Service
 - **Зачем.** Принимает `GenerateRequest`, вызывает LLM runtime (OpenAI-style) и MCP proxy в tool-loop, возвращает ответ/usage/trace.
@@ -28,7 +28,7 @@
 - **Зачем.** Исполняет безопасные инструменты для LLM/MCP. Данные документов берёт из in-memory репозитория; умеет ходить в Retrieval за окном чанков.
 - **Эндпоинты.** `/internal/mcp/execute`, `/health`.
 - **Инструменты.** `read_doc_section`, `read_doc_pages`, `read_doc_metadata`, `doc_local_search`, `read_chunk_window`, `list_available_tools` — единственный источник raw текста для LLM.
-- **Конфиг.** `MCP_PROXY_*`: `max_pages_per_call`, `max_text_bytes`, `rate_limit_calls`, `rate_limit_tokens`, `max_chunk_window`, `retrieval_window_url`, `mock_mode`.
+- **Конфиг.** `MCP_PROXY_*`: `max_pages_per_call`, `max_text_bytes`, `rate_limit_calls`, `rate_limit_tokens`, `max_window_radius` (per-side R из `RAG_WINDOW_RADIUS`/`MCP_PROXY_MAX_WINDOW_RADIUS`, легаси `MCP_PROXY_MAX_CHUNK_WINDOW` → `floor((N-1)/2)`), `retrieval_window_url`, `mock_mode`.
 
 ## Document Service
 - **Зачем.** Хранит метаданные документов/секций/тегов, выдаёт download URL, принимает статусы ingestion.

@@ -24,11 +24,13 @@ async def chunk_window(
     tenant_id = payload.get("tenant_id")
     doc_id = payload.get("doc_id")
     anchor_id = payload.get("anchor_chunk_id")
-    before = int(payload.get("window_before") or 1)
-    after = int(payload.get("window_after") or 1)
+    before_raw = payload.get("window_before")
+    after_raw = payload.get("window_after")
+    before = int(before_raw) if before_raw is not None else 1
+    after = int(after_raw) if after_raw is not None else 1
     trace_id = payload.get("trace_id") or "trace-unknown"
     requested_count = before + after + 1
-    limit = getattr(settings, "max_chunk_window", None)
+    limit = getattr(settings, "window_radius", None)
     if not tenant_id or not doc_id or not anchor_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="tenant_id, doc_id, anchor_chunk_id required")
     logger.info(
@@ -38,6 +40,7 @@ async def chunk_window(
         anchor_chunk_id=anchor_id,
         window_before=before,
         window_after=after,
+        requested_total=requested_count,
         requested_chunks=requested_count,
         trace_id=trace_id,
     )
@@ -75,6 +78,7 @@ async def chunk_window(
             "chunk_window_retrieved_from_chroma",
             doc_id=doc_id,
             count=len(records),
+            tenant_id=tenant_id,
             trace_id=trace_id,
         )
     else:
@@ -94,6 +98,7 @@ async def chunk_window(
             "chunk_window_retrieved_from_memory",
             doc_id=doc_id,
             count=len(records),
+            tenant_id=tenant_id,
             trace_id=trace_id,
         )
     if not records:
@@ -111,9 +116,13 @@ async def chunk_window(
         doc_id=doc_id,
         anchor_chunk_id=anchor_id,
         trace_id=trace_id,
-        requested_chunks=requested_count,
-        available_chunks=len(records),
-        returned=len(window),
+        requested_before=before,
+        requested_after=after,
+        requested_total=requested_count,
+        available_count=len(records),
+        returned_count=len(window),
+        anchor_index=anchor_pos,
+        configured_radius=getattr(settings, "window_radius", None),
         limit_applied=limit,
     )
     logger.info(
@@ -121,6 +130,7 @@ async def chunk_window(
         doc_id=doc_id,
         anchor_chunk_id=anchor_id,
         returned=len(window),
+        tenant_id=tenant_id,
         trace_id=trace_id,
     )
     return {"chunks": window}

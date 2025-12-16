@@ -122,6 +122,7 @@ class OrchestratorConfig(BaseModel):
     prompt_token_budget: Optional[int] = None
     context_token_budget: Optional[int] = None
     max_tool_steps: Optional[int] = None
+    window_radius: Optional[int] = None
     window_initial: Optional[int] = None
     window_step: Optional[int] = None
     window_max: Optional[int] = None

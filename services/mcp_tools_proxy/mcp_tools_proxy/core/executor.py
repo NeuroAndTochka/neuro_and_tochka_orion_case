@@ -97,6 +97,8 @@ class ToolRegistry:
                     message = str(raw_message)
             else:
                 message = raw_message
+            if not isinstance(message, str):
+                message = str(message)
             self._logger.warning(
                 "mcp_tool_error",
                 tool=request.tool_name,

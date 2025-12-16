@@ -27,9 +27,7 @@ uvicorn ai_orchestrator.main:app --reload
 | `ORCH_PROMPT_TOKEN_BUDGET` | `4096` | Max tokens to send to LLM |
 | `ORCH_CONTEXT_TOKEN_BUDGET` | `4096` | Max tokens accumulated from MCP results |
 | `ORCH_MAX_TOOL_STEPS` | `4` | Tool-call loop limit |
-| `ORCH_WINDOW_INITIAL` | `1` | Initial chunk window (before/after) |
-| `ORCH_WINDOW_STEP` | `1` | Increment per repeated fetch |
-| `ORCH_WINDOW_MAX` | `5` | Max window radius |
+| `RAG_WINDOW_RADIUS` / `ORCH_WINDOW_RADIUS` | `2` | Per-side chunk window radius `R` (total chunks = `2R+1`). Legacy `ORCH_WINDOW_MAX` / `MCP_PROXY_MAX_CHUNK_WINDOW` map to `min(window_max, floor((total-1)/2))`. |
 | `ORCH_RETRY_ATTEMPTS` | `1` | Retries for transient errors |
 | `ORCH_MOCK_MODE` | `true` | Use in-memory mocks for Retrieval/LLM/Safety |
 

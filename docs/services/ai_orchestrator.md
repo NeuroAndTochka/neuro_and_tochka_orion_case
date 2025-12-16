@@ -11,14 +11,14 @@
 ## Поток обработки
 1. Проверяет наличие user context; без него отдаёт 400.
 2. Если user не передан, встает дефолтный user/tenant из конфигурации (`default_user_id/default_tenant_id`). Запрашивает `/internal/retrieval/search` (капитирует `max_results` до `Settings.max_results`) и выкидывает поле `text` из hits.
-3. Строит summary-контекст (без полного текста) и первый prompt: только query + список секций (id/summary/pages/score) с инструкцией, что полного текста нет и его нужно вытягивать MCP инструментами.
+3. Строит summary-контекст (без полного текста) и первый prompt: только query + список секций (id/summary/pages/score) с инструкцией, что полного текста нет и его нужно вытягивать MCP инструментами (окно чанков регулируется радиусом `R`, total = `2R+1`).
 4. Запускает tool-loop (ограничение `max_tool_steps`). Предпочитает `read_chunk_window`; если anchor chunk отсутствует, принудительно использует `read_doc_section`. Raw текст попадает к модели только через TOOL_RESULT MCP.
 5. Суммирует использованные токены (prompt + текст из tool-результатов); превышение `context_token_budget` даёт ошибку.
 
 ## Конфигурация (`ORCH_*`)
-`retrieval_url`, `mcp_proxy_url`, `llm_runtime_url`, `default_model`, `prompt_token_budget`, `context_token_budget`, `max_tool_steps`, `window_initial/step/max`, `mock_mode`.
+`retrieval_url`, `mcp_proxy_url`, `llm_runtime_url`, `default_model`, `prompt_token_budget`, `context_token_budget`, `max_tool_steps`, `window_radius` (`RAG_WINDOW_RADIUS`/`ORCH_WINDOW_RADIUS`, total окно = `2R+1`, легаси `window_max`/`MCP_PROXY_MAX_CHUNK_WINDOW` → радиус), `mock_mode`.
 
 ## Особенности
 - `mock_mode=true` (по умолчанию) — retrieval/LLM/MCP клиенты возвращают заглушки; tool-loop завершается за 1–2 шага.
 - Output safety пока не вызывается; безопасность только на входе через Gateway.
-- progressive window увеличивает количество чанков на секцию, если модель повторно запрашивает данные.
+- progressive window увеличивает радиус 1→2→… до `window_radius`, но не превышает лимит MCP proxy.

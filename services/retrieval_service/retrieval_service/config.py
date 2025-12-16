@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
     chunk_top_k: int = 20
     enable_filters: bool = False
     min_docs: int = 5
+    window_radius: int | None = Field(default=None, ge=0, env=["RAG_WINDOW_RADIUS", "RETR_WINDOW_RADIUS"])
 
     vector_backend: str = "chroma"
     chroma_path: str = "./.chroma_ingestion"

@@ -172,11 +172,8 @@ async def ui() -> str:
       <input id="orchContextBudget" type="number" value="4096" />
       <label for="orchToolSteps">max_tool_steps</label>
       <input id="orchToolSteps" type="number" value="4" />
-      <div class="row-flex">
-        <label for="orchWinInit">window_initial</label><input id="orchWinInit" type="number" value="1" />
-        <label for="orchWinStep">window_step</label><input id="orchWinStep" type="number" value="1" />
-        <label for="orchWinMax">window_max</label><input id="orchWinMax" type="number" value="5" />
-      </div>
+      <label for="orchRadius">window_radius (R)</label>
+      <input id="orchRadius" type="number" value="2" />
       <label><input id="orchMock" type="checkbox" /> mock_mode</label>
       <div class="row-flex">
         <button onclick="loadOrchConfig()">Load cfg</button>
@@ -359,9 +356,8 @@ async def ui() -> str:
       document.getElementById("orchPromptBudget").value = data.prompt_token_budget ?? 0;
       document.getElementById("orchContextBudget").value = data.context_token_budget ?? 0;
       document.getElementById("orchToolSteps").value = data.max_tool_steps ?? 0;
-      document.getElementById("orchWinInit").value = data.window_initial ?? 0;
-      document.getElementById("orchWinStep").value = data.window_step ?? 0;
-      document.getElementById("orchWinMax").value = data.window_max ?? 0;
+      const radius = data.window_radius ?? data.window_max ?? 0;
+      document.getElementById("orchRadius").value = radius;
       document.getElementById("orchMock").checked = !!data.mock_mode;
       log("orchAnswer", data);
     }
@@ -371,9 +367,7 @@ async def ui() -> str:
         prompt_token_budget: Number(document.getElementById("orchPromptBudget").value || 0) || null,
         context_token_budget: Number(document.getElementById("orchContextBudget").value || 0) || null,
         max_tool_steps: Number(document.getElementById("orchToolSteps").value || 0) || null,
-        window_initial: Number(document.getElementById("orchWinInit").value || 0) || null,
-        window_step: Number(document.getElementById("orchWinStep").value || 0) || null,
-        window_max: Number(document.getElementById("orchWinMax").value || 0) || null,
+        window_radius: Number(document.getElementById("orchRadius").value || 0) || null,
         mock_mode: document.getElementById("orchMock").checked
       };
       const strategy = document.getElementById("orchStrategy").value;

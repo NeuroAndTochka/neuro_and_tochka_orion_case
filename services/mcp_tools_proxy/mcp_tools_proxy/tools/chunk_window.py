@@ -26,19 +26,29 @@ class ReadChunkWindowTool(BaseTool):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="doc_id and anchor_chunk_id are required")
         before = int(arguments.get("window_before", 0))
         after = int(arguments.get("window_after", 0))
+        if arguments.get("radius") is not None:
+            radius_arg = int(arguments.get("radius") or 0)
+            before = radius_arg
+            after = radius_arg
         if before < 0 or after < 0:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="window_before/window_after must be >= 0")
-        limit = max(1, getattr(self.settings, "max_chunk_window", 5))
-        if before + after + 1 > limit:
+        limit = max(0, getattr(self.settings, "max_window_radius", 0) or 0)
+        requested_total = before + after + 1
+        if before > limit or after > limit:
+            max_requested = max(before, after)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "WINDOW_TOO_LARGE", "message": f"Requested {before+after+1} chunks, limit is {limit}"},
+                detail={
+                    "code": "WINDOW_TOO_LARGE",
+                    "message": f"Requested radius {max_requested} (before={before}, after={after}, total={requested_total}) exceeds max_window_radius={limit}",
+                },
             )
         return {
             "doc_id": str(doc_id),
             "anchor_chunk_id": str(anchor_id),
             "window_before": before,
             "window_after": after,
+            "requested_total": requested_total,
         }
 
     async def run(self, arguments: Dict[str, Any], context):
@@ -46,6 +56,7 @@ class ReadChunkWindowTool(BaseTool):
         anchor_id = arguments["anchor_chunk_id"]
         before = arguments["window_before"]
         after = arguments["window_after"]
+        requested_total = arguments.get("requested_total") or before + after + 1
         # try to enforce tenant using local metadata if available; Retrieval service still filters by tenant_id
         try:
             self._check_doc_access(doc_id, context.user.tenant_id)
@@ -61,11 +72,11 @@ class ReadChunkWindowTool(BaseTool):
             anchor_chunk_id=anchor_id,
             before=before,
             after=after,
+            requested_total=requested_total,
             tenant_id=context.user.tenant_id,
             trace_id=context.trace_id,
-            requested_chunks=before + after + 1,
-            max_window_limit=getattr(self.settings, "max_chunk_window", 5),
-            limit_source="settings.max_chunk_window",
+            max_window_radius=getattr(self.settings, "max_window_radius", 0),
+            limit_source=getattr(self.settings, "max_window_radius_source", "unknown"),
         )
         response = await self.retrieval_client.fetch_chunk_window(
             tenant_id=context.user.tenant_id,
@@ -113,4 +124,5 @@ class ReadChunkWindowTool(BaseTool):
             "chunks": trimmed,
             "count": len(trimmed),
             "tokens": tokens,
+            "requested_total": requested_total,
         }

@@ -12,11 +12,11 @@
 - `read_doc_pages` — doc_id + page_start/page_end (лимит `max_pages_per_call`).
 - `read_doc_metadata` — doc_id → метаданные/секции.
 - `doc_local_search` — doc_id + query + max_results≤5, возвращает сниппеты.
-- `read_chunk_window` — doc_id + anchor_chunk_id (+ окна), ходит в Retrieval `/chunks/window`, режет текст до `max_text_bytes`.
+- `read_chunk_window` — doc_id + anchor_chunk_id (+ окна/`radius`), ходит в Retrieval `/chunks/window`, режет текст до `max_text_bytes`, проверяет радиус окна (per-side).
 - `list_available_tools` — перечисление всех инструментов.
 
 ## Конфигурация (`MCP_PROXY_*`)
-`max_pages_per_call`, `max_text_bytes`, `rate_limit_calls`, `rate_limit_tokens`, `max_chunk_window`, `retrieval_window_url`, `retrieval_timeout`, `blocklist_keywords`, `mock_mode`.
+`max_pages_per_call`, `max_text_bytes`, `rate_limit_calls`, `rate_limit_tokens`, `max_window_radius` (`RAG_WINDOW_RADIUS`/`MCP_PROXY_MAX_WINDOW_RADIUS`, легаси `MCP_PROXY_MAX_CHUNK_WINDOW` → радиус), `retrieval_window_url`, `retrieval_timeout`, `blocklist_keywords`, `mock_mode`.
 
 ## Источники данных
 Документы лежат в in-memory `DocumentRepository` (засеян `doc_1`/`tenant_1`). Tenant проверяется локально; при `mock_mode` разрешены заглушки. Для `read_chunk_window` требуется настроенный Retrieval URL, иначе вернётся `503`.

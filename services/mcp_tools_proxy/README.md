@@ -26,7 +26,7 @@ uvicorn mcp_tools_proxy.main:app --reload
 | `MCP_PROXY_RATE_LIMIT_CALLS` | `10` | Calls per doc & generation |
 | `MCP_PROXY_RATE_LIMIT_TOKENS` | `2000` | Approx token budget per response |
 | `MCP_PROXY_RETRIEVAL_WINDOW_URL` | – | Retrieval chunk window endpoint (e.g. `http://retrieval_service:8040/internal/retrieval/chunks/window`) |
-| `MCP_PROXY_MAX_CHUNK_WINDOW` | `5` | Max chunks returned by `read_chunk_window` |
+| `RAG_WINDOW_RADIUS` / `MCP_PROXY_MAX_WINDOW_RADIUS` | `2` | Per-side chunk window radius `R` (total chunks = `2R+1`). Legacy `MCP_PROXY_MAX_CHUNK_WINDOW` is mapped via `floor((N-1)/2)` and capped by this radius. |
 | `MCP_PROXY_MOCK_MODE` | `true` | Use in-memory repositories instead of real stores |
 
 Set `MCP_PROXY_MOCK_MODE=false` and wire actual repositories/clients when backends are available.
