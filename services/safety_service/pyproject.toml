@@ -14,7 +14,8 @@ dependencies = [
     "uvicorn[standard]>=0.26.0",
     "pydantic>=2.6.0",
     "pydantic-settings>=2.2.1",
-    "structlog>=23.1.0"
+    "structlog>=23.1.0",
+    "openai>=1.40.0"
 ]
 
 [project.optional-dependencies]

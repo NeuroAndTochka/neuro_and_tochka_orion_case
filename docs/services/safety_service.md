@@ -15,6 +15,7 @@ Safety Service реализует input guard и output guard, применяя 
 | `SAFETY_SERVICE_BLOCKLIST` | Список запрещённых слов/шаблонов. |
 | `SAFETY_SERVICE_ENABLE_PII_SANITIZE` | Флаг редактирования текста. |
 | `SAFETY_SERVICE_DEFAULT_POLICY_ID` | Идентификатор политики в логах. |
+| `SAFETY_SERVICE_SAFETY_LLM_*` | Блок переменных (`ENABLED`, `API_KEY`, `BASE_URL`, `MODEL`, `TIMEOUT`, `FAIL_OPEN`) для вызова `openai/gpt-oss-safeguard-20b`, который выполняет дополнительную легальную/комплаенс-проверку запроса. |
 
 ## API
 ### `POST /internal/safety/input-check`

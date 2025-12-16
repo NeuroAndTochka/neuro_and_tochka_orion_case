@@ -25,6 +25,12 @@ Environment variables prefixed with `SAFETY_SERVICE_` configure runtime behavior
 | `SAFETY_SERVICE_BLOCKLIST` | `hack,breach,exploit` | Comma-separated disallowed keywords |
 | `SAFETY_SERVICE_ENABLE_PII_SANITIZE` | `true` | Whether to redact detected PII in `transformed` responses |
 | `SAFETY_SERVICE_DEFAULT_POLICY_ID` | `policy_default_v1` | Policy identifier added to responses |
+| `SAFETY_SERVICE_SAFETY_LLM_ENABLED` | `false` | Enable OpenAI-based safety review |
+| `SAFETY_SERVICE_SAFETY_LLM_API_KEY` | - | API key for the OpenAI-compatible endpoint |
+| `SAFETY_SERVICE_SAFETY_LLM_BASE_URL` | - | Override API base (e.g., OpenRouter) |
+| `SAFETY_SERVICE_SAFETY_LLM_MODEL` | `openai/gpt-oss-safeguard-20b` | Safety model identifier |
+| `SAFETY_SERVICE_SAFETY_LLM_TIMEOUT` | `15.0` | Timeout (seconds) for the LLM call |
+| `SAFETY_SERVICE_SAFETY_LLM_FAIL_OPEN` | `true` | When `false`, guard failures block the query |
 
 ## Tests
 

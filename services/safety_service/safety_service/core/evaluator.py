@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import List, Sequence
 
 from safety_service.config import Settings
+from safety_service.core.llm_guard import get_llm_guard
 from safety_service.schemas import InputCheckRequest, OutputCheckRequest, SafetyResponse
 
 PII_PATTERNS: Sequence[re.Pattern[str]] = (
@@ -68,6 +69,17 @@ def _pii_action(mode: str) -> str:
     return mapping.get(mode, "transform")
 
 
+def _merge_risk_tags(*sources: Sequence[str] | None) -> List[str]:
+    merged: List[str] = []
+    for source in sources:
+        if not source:
+            continue
+        for tag in source:
+            if tag not in merged:
+                merged.append(tag)
+    return merged
+
+
 def evaluate_input(request: InputCheckRequest, settings: Settings) -> SafetyResponse:
     trace_id = _default_trace_id(request.meta.trace_id if request.meta else None)
     risk_tags: List[str] = []
@@ -114,6 +126,37 @@ def evaluate_input(request: InputCheckRequest, settings: Settings) -> SafetyResp
                 message="Sensitive data removed from query.",
                 risk_tags=risk_tags,
                 transformed_query=_redact_pii(request.query),
+                policy_id=settings.default_policy_id,
+                trace_id=trace_id,
+            )
+
+    llm_guard = get_llm_guard(
+        enabled=settings.safety_llm_enabled,
+        base_url=settings.safety_llm_base_url,
+        api_key=settings.safety_llm_api_key,
+        model=settings.safety_llm_model,
+        timeout=settings.safety_llm_timeout,
+        fail_open=settings.safety_llm_fail_open,
+    )
+    if llm_guard:
+        decision = llm_guard.evaluate(request.query, trace_id=trace_id)
+        if decision.decision == "block":
+            combined_risks = _merge_risk_tags(risk_tags, decision.risk_tags)
+            return SafetyResponse(
+                status="blocked",
+                reason="llm_policy_violation",
+                message=decision.reason or "Blocked by safeguard model",
+                risk_tags=combined_risks,
+                policy_id=settings.default_policy_id,
+                trace_id=trace_id,
+            )
+        if decision.decision == "error" and not llm_guard.fail_open:
+            combined_risks = _merge_risk_tags(risk_tags, decision.risk_tags, ["llm_guard_unavailable"])
+            return SafetyResponse(
+                status="blocked",
+                reason="safety_guard_unavailable",
+                message=decision.reason or "LLM guard unavailable",
+                risk_tags=combined_risks,
                 policy_id=settings.default_policy_id,
                 trace_id=trace_id,
             )

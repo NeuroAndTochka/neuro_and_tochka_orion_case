@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     blocklist: List[str] = ["hack", "breach", "exploit"]
     enable_pii_sanitize: bool = True
     default_policy_id: str = "policy_default_v1"
+    safety_llm_enabled: bool = False
+    safety_llm_model: str = "openai/gpt-oss-safeguard-20b"
+    safety_llm_base_url: Optional[str] = None
+    safety_llm_api_key: Optional[str] = None
+    safety_llm_timeout: float = 15.0
+    safety_llm_fail_open: bool = True
 
 
 @lru_cache

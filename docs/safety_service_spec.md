@@ -32,6 +32,7 @@
 - Конфиг через `SAFETY_SERVICE_*` переменные окружения (`config.py`), включая режим политики (`strict/balanced/relaxed`) и блоклист.
 - Логика safety реализована в `core/evaluator.py`: простые эвристики (блоклисты, prompt injection markers, PII regex) с режимами `blocked/transformed/allowed`.
 - Автотесты находятся в `services/safety_service/tests` и покрывают ядро и HTTP-endpoints.
+- Дополнительно можно включить LLM-проверку законности запроса через `openai/gpt-oss-safeguard-20b` (OpenAI-compatible API), которая срабатывает перед выдачей статуса `allowed`.
 
 ---
 
