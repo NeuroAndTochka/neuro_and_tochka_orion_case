@@ -64,6 +64,12 @@ class RetrievalSearchRequest(BaseModel):
     doc_ids: Optional[List[str]] = None
     section_ids: Optional[List[str]] = None
     trace_id: Optional[str] = None
+    docs_top_k: Optional[int] = None
+    sections_top_k_per_doc: Optional[int] = None
+    max_total_sections: Optional[int] = None
+    rerank_score_threshold: Optional[float] = None
+    enable_section_cosine: Optional[bool] = None
+    enable_rerank: Optional[bool] = None
     rerank_enabled: Optional[bool] = None
 
 
@@ -114,6 +120,13 @@ class OrchestratorRequest(BaseModel):
     trace_id: Optional[str] = None
     user: Optional[Dict[str, Any]] = None
     tenant_id: Optional[str] = None
+    docs_top_k: Optional[int] = None
+    sections_top_k_per_doc: Optional[int] = None
+    max_total_sections: Optional[int] = None
+    rerank_score_threshold: Optional[float] = None
+    enable_section_cosine: Optional[bool] = None
+    enable_rerank: Optional[bool] = None
+    rerank_enabled: Optional[bool] = None
 
 
 class OrchestratorConfig(BaseModel):

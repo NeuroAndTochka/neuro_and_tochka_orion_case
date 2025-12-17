@@ -18,9 +18,16 @@ class Settings(BaseSettings):
     min_score: float | None = None
     doc_top_k: int = 5
     section_top_k: int = 10
+    docs_top_k: int | None = Field(default=None, ge=1)
+    sections_top_k_per_doc: int | None = Field(default=None, ge=1)
+    max_total_sections: int | None = Field(default=None, ge=1)
     chunk_top_k: int = 20
     enable_filters: bool = False
     min_docs: int = 5
+    rerank_score_threshold: float = Field(default=0.0, ge=0.0, le=1.0)
+    enable_section_cosine: bool = True
+    enable_rerank: bool | None = None
+    chunks_enabled: bool = False
     window_radius: int | None = Field(default=None, ge=0, env=["RAG_WINDOW_RADIUS", "RETR_WINDOW_RADIUS"])
 
     vector_backend: str = "chroma"
@@ -39,6 +46,17 @@ class Settings(BaseSettings):
     rerank_api_base: str | None = None
     rerank_api_key: str | None = None
     rerank_top_n: int = 5
+
+    def model_post_init(self, __context) -> None:  # type: ignore[override]
+        self.docs_top_k = max(1, self.docs_top_k or self.doc_top_k)
+        self.doc_top_k = self.docs_top_k
+        self.sections_top_k_per_doc = max(1, self.sections_top_k_per_doc or self.section_top_k)
+        self.section_top_k = self.sections_top_k_per_doc
+        self.max_total_sections = max(
+            1, self.max_total_sections or self.sections_top_k_per_doc or self.section_top_k
+        )
+        self.enable_rerank = self.enable_rerank if self.enable_rerank is not None else bool(self.rerank_enabled)
+        self.rerank_score_threshold = min(1.0, max(0.0, float(self.rerank_score_threshold or 0.0)))
 
 
 @lru_cache

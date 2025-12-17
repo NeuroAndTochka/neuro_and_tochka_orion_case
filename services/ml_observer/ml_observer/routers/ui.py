@@ -113,17 +113,28 @@ async def ui() -> str:
       <input id="retrDocIds" placeholder="doc_1,doc_2" />
       <label for="retrFilters">filters (JSON)</label>
       <textarea id="retrFilters">{}</textarea>
-      <label><input id="retrRerank" type="checkbox" /> использовать reranker</label>
+      <label for="retrDocsTopK">docs_top_k</label>
+      <input id="retrDocsTopK" type="number" value="5" />
+      <label for="retrSectionsTopK">sections_top_k_per_doc</label>
+      <input id="retrSectionsTopK" type="number" value="10" />
+      <label for="retrMaxSections">max_total_sections</label>
+      <input id="retrMaxSections" type="number" value="10" />
+      <label for="retrRerankThreshold">rerank_score_threshold</label>
+      <input id="retrRerankThreshold" type="number" step="0.01" min="0" max="1" value="0" />
+      <label><input id="retrSectionCosine" type="checkbox" checked /> enable_section_cosine</label>
+      <label><input id="retrRerank" type="checkbox" /> enable_rerank</label>
       <button onclick="runRetrievalBackend()">Поиск</button>
       <pre id="retrBackendLog">...</pre>
     </section>
 
     <section>
       <h3>Retrieval config</h3>
-      <label for="docTopK">doc_top_k</label>
+      <label for="docTopK">docs_top_k (doc_top_k)</label>
       <input id="docTopK" type="number" value="5" />
-      <label for="sectionTopK">section_top_k</label>
+      <label for="sectionTopK">sections_top_k_per_doc (section_top_k)</label>
       <input id="sectionTopK" type="number" value="10" />
+      <label for="maxTotalSections">max_total_sections</label>
+      <input id="maxTotalSections" type="number" value="10" />
       <label for="chunkTopK">chunk_top_k</label>
       <input id="chunkTopK" type="number" value="20" />
       <label for="maxResults">max_results</label>
@@ -133,7 +144,11 @@ async def ui() -> str:
       <label for="minScore">min_score</label>
       <input id="minScore" type="number" step="0.01" />
       <label><input id="enableFilters" type="checkbox" /> enable_filters</label>
-      <label><input id="rerankEnabled" type="checkbox" /> rerank_enabled</label>
+      <label><input id="enableSectionCosine" type="checkbox" checked /> enable_section_cosine</label>
+      <label><input id="rerankEnabled" type="checkbox" /> enable_rerank</label>
+      <label for="rerankThreshold">rerank_score_threshold</label>
+      <input id="rerankThreshold" type="number" step="0.01" min="0" max="1" />
+      <label><input id="chunksEnabled" type="checkbox" /> chunks_enabled (legacy chunk search)</label>
       <label for="rerankModel">rerank_model</label>
       <input id="rerankModel" placeholder="gpt-4o-mini" />
       <label for="rerankTopN">rerank_top_n</label>
@@ -155,6 +170,16 @@ async def ui() -> str:
       <input id="orchDocIds" placeholder="doc_1,doc_2" />
       <label for="orchFilters">filters (JSON)</label>
       <textarea id="orchFilters">{}</textarea>
+      <label for="orchDocsTopK">docs_top_k</label>
+      <input id="orchDocsTopK" type="number" value="5" />
+      <label for="orchSectionsTopK">sections_top_k_per_doc</label>
+      <input id="orchSectionsTopK" type="number" value="10" />
+      <label for="orchMaxSections">max_total_sections</label>
+      <input id="orchMaxSections" type="number" value="10" />
+      <label for="orchRerankThreshold">rerank_score_threshold</label>
+      <input id="orchRerankThreshold" type="number" step="0.01" min="0" max="1" />
+      <label><input id="orchSectionCosine" type="checkbox" checked /> enable_section_cosine</label>
+      <label><input id="orchRerank" type="checkbox" /> enable_rerank</label>
       <label for="orchTrace">trace_id</label>
       <input id="orchTrace" placeholder="trace-123" />
       <button onclick="runOrchestrator()">Запустить</button>
@@ -310,11 +335,22 @@ async def ui() -> str:
         .split(",").map(s => s.trim()).filter(Boolean);
       let filters = {};
       try { filters = JSON.parse(document.getElementById("retrFilters").value || "{}"); } catch (e) { filters = {}; }
+      const docsTopK = Number(document.getElementById("retrDocsTopK").value || 0) || null;
+      const sectionsTopK = Number(document.getElementById("retrSectionsTopK").value || 0) || null;
+      const maxSections = Number(document.getElementById("retrMaxSections").value || 0) || null;
+      const rerankThresholdRaw = document.getElementById("retrRerankThreshold").value;
+      const rerankThreshold = rerankThresholdRaw === "" ? null : Number(rerankThresholdRaw);
       const payload = {
         query: document.getElementById("retrQuery").value || "",
         max_results: Number(document.getElementById("retrMax").value || 0) || null,
         doc_ids: docIds.length ? docIds : null,
         filters: filters,
+        docs_top_k: docsTopK,
+        sections_top_k_per_doc: sectionsTopK,
+        max_total_sections: maxSections,
+        rerank_score_threshold: rerankThreshold,
+        enable_section_cosine: document.getElementById("retrSectionCosine").checked,
+        enable_rerank: document.getElementById("retrRerank").checked,
         rerank_enabled: document.getElementById("retrRerank").checked
       };
       const res = await fetch("/internal/observer/retrieval/search", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
@@ -335,12 +371,24 @@ async def ui() -> str:
       let filters = null;
       try { filters = document.getElementById("orchFilters").value ? JSON.parse(document.getElementById("orchFilters").value) : null; } catch (e) { filters = null; }
       const docIds = (document.getElementById("orchDocIds").value || "").split(",").map(s => s.trim()).filter(Boolean);
+      const docsTopK = Number(document.getElementById("orchDocsTopK").value || 0) || null;
+      const sectionsTopK = Number(document.getElementById("orchSectionsTopK").value || 0) || null;
+      const maxSections = Number(document.getElementById("orchMaxSections").value || 0) || null;
+      const rerankThresholdRaw = document.getElementById("orchRerankThreshold").value;
+      const rerankThreshold = rerankThresholdRaw === "" ? null : Number(rerankThresholdRaw);
       const payload = {
         query: document.getElementById("orchQuery").value || "",
         max_results: Number(document.getElementById("orchMaxResults").value || 0) || null,
         doc_ids: docIds.length ? docIds : null,
         filters: filters,
-        trace_id: document.getElementById("orchTrace").value || `trace-${Math.random().toString(36).slice(2,7)}`
+        trace_id: document.getElementById("orchTrace").value || `trace-${Math.random().toString(36).slice(2,7)}`,
+        docs_top_k: docsTopK,
+        sections_top_k_per_doc: sectionsTopK,
+        max_total_sections: maxSections,
+        rerank_score_threshold: rerankThreshold,
+        enable_section_cosine: document.getElementById("orchSectionCosine").checked,
+        enable_rerank: document.getElementById("orchRerank").checked,
+        rerank_enabled: document.getElementById("orchRerank").checked
       };
       const res = await fetch("/internal/observer/orchestrator/respond", {method:"POST", headers: headers(), body: JSON.stringify(payload)});
       const data = await res.json();
@@ -399,28 +447,41 @@ async def ui() -> str:
     async function loadRetrievalConfig() {
       const res = await fetch("/internal/observer/retrieval/config", {headers: headers()});
       const data = await res.json();
-      document.getElementById("docTopK").value = data.doc_top_k ?? "";
-      document.getElementById("sectionTopK").value = data.section_top_k ?? "";
+      document.getElementById("docTopK").value = data.docs_top_k ?? data.doc_top_k ?? "";
+      document.getElementById("sectionTopK").value = data.sections_top_k_per_doc ?? data.section_top_k ?? "";
+      document.getElementById("maxTotalSections").value = data.max_total_sections ?? "";
       document.getElementById("chunkTopK").value = data.chunk_top_k ?? "";
       document.getElementById("maxResults").value = data.max_results ?? "";
       document.getElementById("topkPerDoc").value = data.topk_per_doc ?? "";
       document.getElementById("minScore").value = data.min_score ?? "";
       document.getElementById("enableFilters").checked = !!data.enable_filters;
-      document.getElementById("rerankEnabled").checked = !!data.rerank_enabled;
+      document.getElementById("enableSectionCosine").checked = data.enable_section_cosine !== false;
+      document.getElementById("rerankEnabled").checked = !!(data.enable_rerank ?? data.rerank_enabled);
+      document.getElementById("rerankThreshold").value = data.rerank_score_threshold ?? "";
+      document.getElementById("chunksEnabled").checked = !!data.chunks_enabled;
       document.getElementById("rerankModel").value = data.rerank_model ?? "";
       document.getElementById("rerankTopN").value = data.rerank_top_n ?? "";
       log("retrConfigLog", data);
     }
     async function saveRetrievalConfig() {
+      const rerankThresholdRaw = document.getElementById("rerankThreshold").value;
+      const rerankThreshold = rerankThresholdRaw === "" ? null : Number(rerankThresholdRaw);
       const payload = {
         doc_top_k: Number(document.getElementById("docTopK").value || 0) || null,
+        docs_top_k: Number(document.getElementById("docTopK").value || 0) || null,
         section_top_k: Number(document.getElementById("sectionTopK").value || 0) || null,
+        sections_top_k_per_doc: Number(document.getElementById("sectionTopK").value || 0) || null,
+        max_total_sections: Number(document.getElementById("maxTotalSections").value || 0) || null,
         chunk_top_k: Number(document.getElementById("chunkTopK").value || 0) || null,
         max_results: Number(document.getElementById("maxResults").value || 0) || null,
         topk_per_doc: Number(document.getElementById("topkPerDoc").value || 0) || null,
         min_score: document.getElementById("minScore").value ? Number(document.getElementById("minScore").value) : null,
         enable_filters: document.getElementById("enableFilters").checked,
+        enable_section_cosine: document.getElementById("enableSectionCosine").checked,
+        enable_rerank: document.getElementById("rerankEnabled").checked,
         rerank_enabled: document.getElementById("rerankEnabled").checked,
+        rerank_score_threshold: rerankThreshold,
+        chunks_enabled: document.getElementById("chunksEnabled").checked,
         rerank_model: document.getElementById("rerankModel").value || null,
         rerank_top_n: Number(document.getElementById("rerankTopN").value || 0) || null
       };

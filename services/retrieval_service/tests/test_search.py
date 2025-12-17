@@ -19,6 +19,7 @@ def test_search_returns_hits():
         assert data["hits"][0]["doc_id"] == "doc_1"
         assert "text" not in data["hits"][0]
         assert data["hits"][0]["summary"]
+        assert data["hits"][0].get("anchor_chunk_id") == data["hits"][0].get("chunk_id")
         assert "steps" in data
 
 
@@ -92,6 +93,7 @@ def test_chroma_search_with_metadata_filters(tmp_path):
                 "summary": "hello summary",
                 "page_start": 1,
                 "page_end": 1,
+                "chunk_ids": "chunk_1_1",
                 "product": "p1",
                 "version": "v1",
                 "tags": tags,
@@ -114,6 +116,8 @@ def test_chroma_search_with_metadata_filters(tmp_path):
         ],
     )
     query = RetrievalQuery(query="hello", tenant_id="tenant_meta", filters=RetrievalFilters(product="p1", tags=["alpha"]))
-    hits, _ = index.search(query)
+    hits, steps = index.search(query)
     assert hits
     assert hits[0].doc_id == "doc_meta"
+    assert hits[0].anchor_chunk_id == "chunk_1_1"
+    assert steps.chunks == []

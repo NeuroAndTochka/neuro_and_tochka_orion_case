@@ -30,12 +30,18 @@ def build_index():
             embedding=embedding,
             max_results=settings.max_results,
             topk_per_doc=settings.topk_per_doc,
-            min_score=settings.min_score,
             reranker=SectionReranker(settings),
             doc_top_k=settings.doc_top_k,
+            docs_top_k=settings.docs_top_k,
             section_top_k=settings.section_top_k,
+            sections_top_k_per_doc=settings.sections_top_k_per_doc,
+            max_total_sections=settings.max_total_sections,
             chunk_top_k=settings.chunk_top_k,
             min_docs=getattr(settings, "min_docs", settings.doc_top_k),
+            enable_section_cosine=settings.enable_section_cosine,
+            enable_rerank=settings.enable_rerank,
+            rerank_score_threshold=settings.rerank_score_threshold,
+            chunks_enabled=settings.chunks_enabled,
         )
     raise RuntimeError(f"Unsupported vector backend: {settings.vector_backend}")
 

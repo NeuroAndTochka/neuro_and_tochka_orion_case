@@ -28,17 +28,16 @@ class SectionReranker:
     def available(self) -> bool:
         return bool(self._client)
 
-    def rerank(
-        self, query: str, sections: List[RetrievalHit], top_n: int
-    ) -> List[RetrievalHit]:
+    def rerank(self, query: str, sections: List[RetrievalHit], top_n: int) -> List[RetrievalHit]:
         if not self._client or not sections:
             return sections
         payload = {
             "query": query,
             "sections": [
                 {
+                    "doc_id": hit.doc_id,
                     "section_id": hit.section_id or hit.chunk_id or f"s{i}",
-                    "text": hit.text,
+                    "text": hit.text or hit.summary,
                 }
                 for i, hit in enumerate(sections)
             ],
@@ -46,12 +45,14 @@ class SectionReranker:
         }
         prompt = (
             "Given a user query and a list of sections, return a JSON array of objects "
-            'with fields "section_id" and "score" in [0,1], higher is more relevant. '
+            'with fields "doc_id", "section_id" and "rerank_score" in [0,1], higher is more relevant. '
             "Return ONLY JSON, no commentary.\n\n"
             f"Query: {query}\n\nSections:\n"
         )
         for item in payload["sections"]:
-            prompt += f"- id: {item['section_id']}, text: {item['text'][:500]}\n"
+            prompt += (
+                f"- doc: {item['doc_id']}, id: {item['section_id']}, text: {(item['text'] or '')[:500]}\n"
+            )
         try:
             resp = self._client.chat.completions.create(
                 model=self.settings.rerank_model,
@@ -79,15 +80,24 @@ class SectionReranker:
         if isinstance(scores, list):
             for item in scores:
                 sid = item.get("section_id")
+                doc_id = item.get("doc_id")
                 score_val = item.get("score")
+                if score_val is None:
+                    score_val = item.get("rerank_score")
                 if sid and isinstance(score_val, (int, float)):
-                    score_map[str(sid)] = float(score_val)
+                    key = f"{doc_id}::{sid}" if doc_id else str(sid)
+                    score_map[key] = min(1.0, max(0.0, float(score_val)))
 
         reranked: List[RetrievalHit] = []
         for hit in sections:
             sid = hit.section_id or hit.chunk_id
-            if sid and sid in score_map:
-                hit.score = score_map[sid]
+            key = f"{hit.doc_id}::{sid}" if sid else ""
+            if sid and key in score_map:
+                hit.rerank_score = score_map[key]
+                hit.score = hit.rerank_score
+            else:
+                hit.rerank_score = hit.rerank_score if hit.rerank_score is not None else 0.0
+                hit.score = hit.rerank_score
             reranked.append(hit)
         reranked.sort(key=lambda h: h.score, reverse=True)
         return reranked[:top_n] if top_n else reranked

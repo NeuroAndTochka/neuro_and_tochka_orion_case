@@ -431,6 +431,12 @@ async def retrieval_search(
         "doc_ids": payload.doc_ids,
         "section_ids": payload.section_ids,
         "trace_id": payload.trace_id,
+        "docs_top_k": payload.docs_top_k,
+        "sections_top_k_per_doc": payload.sections_top_k_per_doc,
+        "max_total_sections": payload.max_total_sections,
+        "rerank_score_threshold": payload.rerank_score_threshold,
+        "enable_section_cosine": payload.enable_section_cosine,
+        "enable_rerank": payload.enable_rerank,
         "rerank_enabled": payload.rerank_enabled,
     }
     try:

@@ -69,17 +69,29 @@ class Orchestrator:
             source=request.channel or "ui",
         )
         retrieval_start = time.perf_counter()
-        retrieval_hits, retrieval_steps = await self.retrieval.search(
-            {
-                "query": request.query,
-                "tenant_id": user_context.tenant_id,
-                "filters": request.filters,
-                "doc_ids": request.doc_ids,
-                "section_ids": request.section_ids,
-                "max_results": request.max_results,
-                "trace_id": trace_id,
-            }
-        )
+        retrieval_payload = {
+            "query": request.query,
+            "tenant_id": user_context.tenant_id,
+            "filters": request.filters,
+            "doc_ids": request.doc_ids,
+            "section_ids": request.section_ids,
+            "max_results": request.max_results,
+            "trace_id": trace_id,
+        }
+        for field in [
+            "docs_top_k",
+            "sections_top_k_per_doc",
+            "max_total_sections",
+            "rerank_score_threshold",
+            "enable_section_cosine",
+            "enable_rerank",
+        ]:
+            value = getattr(request, field, None)
+            if value is not None:
+                retrieval_payload[field] = value
+        if request.rerank_enabled is not None and "enable_rerank" not in retrieval_payload:
+            retrieval_payload["enable_rerank"] = request.rerank_enabled
+        retrieval_hits, retrieval_steps = await self.retrieval.search(retrieval_payload)
         retrieval_latency = int((time.perf_counter() - retrieval_start) * 1000)
         steps_docs = retrieval_steps.get("docs", 0) if retrieval_steps else 0
         steps_sections = retrieval_steps.get("sections", 0) if retrieval_steps else 0
@@ -336,11 +348,14 @@ class Orchestrator:
         mapping: Dict[str, str] = {}
         for sec in sections:
             sec_id = sec.get("section_id")
+            anchor = sec.get("anchor_chunk_id")
             chunk_ids = sec.get("chunk_ids") or []
-            if isinstance(chunk_ids, list) and sec_id and chunk_ids:
-                mapping[sec_id] = chunk_ids[0]
-            elif sec_id and sec.get("chunk_id"):
-                mapping[sec_id] = sec.get("chunk_id")
+            if isinstance(chunk_ids, list) and not anchor and chunk_ids:
+                anchor = chunk_ids[0]
+            if not anchor:
+                anchor = sec.get("chunk_id")
+            if sec_id and anchor:
+                mapping[sec_id] = anchor
         return mapping
 
     async def _execute_tool(

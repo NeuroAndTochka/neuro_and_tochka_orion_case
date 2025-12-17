@@ -18,6 +18,13 @@ class RetrievalQuery(BaseModel):
     tenant_id: str
     max_results: Optional[int] = None
     filters: Optional[RetrievalFilters] = None
+    docs_top_k: Optional[int] = None
+    sections_top_k_per_doc: Optional[int] = None
+    max_total_sections: Optional[int] = None
+    rerank_score_threshold: Optional[float] = None
+    enable_section_cosine: Optional[bool] = None
+    enable_rerank: Optional[bool] = None
+    chunks_enabled: Optional[bool] = None
     doc_ids: Optional[List[str]] = None
     section_ids: Optional[List[str]] = None
     enable_filters: Optional[bool] = None
@@ -36,6 +43,8 @@ class RetrievalHit(BaseModel):
     chunk_id: Optional[str] = None
     text: Optional[str] = Field(default=None, exclude=True)
     score: float
+    rerank_score: Optional[float] = None
+    anchor_chunk_id: Optional[str] = None
     page_start: Optional[int] = None
     page_end: Optional[int] = None
     chunk_ids: Optional[List[str]] = None

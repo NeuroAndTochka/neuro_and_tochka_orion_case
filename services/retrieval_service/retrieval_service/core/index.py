@@ -61,6 +61,9 @@ class InMemoryIndex:
             for hit in self.documents
             if q in hit.text.lower() and (not allowed_docs or hit.doc_id in allowed_docs)
         ]
+        for hit in results:
+            if hit.chunk_id and not hit.anchor_chunk_id:
+                hit.anchor_chunk_id = hit.chunk_id
         return results[: query.max_results or len(results)]
 
 
@@ -72,14 +75,20 @@ class ChromaIndex:
         embedding: EmbeddingClient,
         max_results: int,
         topk_per_doc: int = 0,
-        min_score: float | None = None,
         doc_collection: str = "ingestion_docs",
         section_collection: str = "ingestion_sections",
         reranker: SectionReranker | None = None,
         doc_top_k: int = 5,
+        docs_top_k: int | None = None,
         section_top_k: int = 10,
+        sections_top_k_per_doc: int | None = None,
+        max_total_sections: int | None = None,
         chunk_top_k: int = 20,
         min_docs: int = 0,
+        enable_section_cosine: bool = True,
+        enable_rerank: bool | None = None,
+        rerank_score_threshold: float = 0.0,
+        chunks_enabled: bool = False,
     ) -> None:
         self.client = client
         self.collection = client.get_or_create_collection(collection_name)
@@ -88,11 +97,16 @@ class ChromaIndex:
         self.embedding = embedding
         self.max_results = max_results
         self.topk_per_doc = topk_per_doc
-        self.min_score = min_score
-        self.doc_top_k = doc_top_k
-        self.section_top_k = section_top_k
+        self.min_score = None
+        self.doc_top_k = docs_top_k or doc_top_k
+        self.section_top_k = sections_top_k_per_doc or section_top_k
+        self.max_total_sections = max_total_sections or self.section_top_k
         self.chunk_top_k = chunk_top_k
         self.reranker = reranker
+        self.enable_section_cosine = enable_section_cosine
+        self.enable_rerank = enable_rerank
+        self.rerank_score_threshold = rerank_score_threshold
+        self.chunks_enabled = chunks_enabled
         self.min_docs = min_docs or doc_top_k
         self._logger = structlog.get_logger(__name__)
 
@@ -114,6 +128,45 @@ class ChromaIndex:
     def search(self, query: RetrievalQuery) -> tuple[List[RetrievalHit], RetrievalStepResults]:
         where = self._build_where(query)
         max_results = query.max_results or self.max_results
+        docs_top_k = max(1, query.docs_top_k or self.doc_top_k)
+        sections_top_k = max(1, query.sections_top_k_per_doc or self.section_top_k)
+        max_total_sections = query.max_total_sections or self.max_total_sections or sections_top_k
+        max_sections_cap = min(max_total_sections, max_results) if max_total_sections else max_results
+        section_cosine_enabled = (
+            query.enable_section_cosine if query.enable_section_cosine is not None else self.enable_section_cosine
+        )
+        chunks_enabled = self.chunks_enabled if query.chunks_enabled is None else bool(query.chunks_enabled)
+        rerank_threshold = query.rerank_score_threshold
+        if rerank_threshold is None:
+            rerank_threshold = self.rerank_score_threshold
+        rerank_threshold = min(1.0, max(0.0, float(rerank_threshold or 0.0)))
+        use_rerank = False
+        if self.reranker and self.reranker.available():
+            if query.enable_rerank is not None:
+                use_rerank = query.enable_rerank
+            elif query.rerank_enabled is not None:
+                use_rerank = query.rerank_enabled
+            elif self.enable_rerank is not None:
+                use_rerank = self.enable_rerank
+            else:
+                use_rerank = bool(self.reranker.settings.rerank_enabled)
+
+        self._logger.info(
+            "retrieval_parameters_resolved",
+            docs_top_k=docs_top_k,
+            sections_top_k_per_doc=sections_top_k,
+            max_total_sections=max_total_sections,
+            max_sections_cap=max_sections_cap,
+            rerank_threshold=rerank_threshold,
+            section_cosine_enabled=section_cosine_enabled,
+            rerank_enabled=use_rerank,
+            chunks_enabled=chunks_enabled,
+            max_results=max_results,
+            chunk_top_k=self.chunk_top_k,
+            topk_per_doc=self.topk_per_doc,
+            min_docs=self.min_docs,
+        )
+
         query_embedding = self.embedding.embed([query.query])[0]
         steps = RetrievalStepResults()
         tags_filter: Set[str] | None = None
@@ -126,9 +179,11 @@ class ChromaIndex:
             stage="docs",
             collection=getattr(self.doc_collection, "name", "ingestion_docs"),
             where=where,
-            requested=self.doc_top_k,
+            requested=docs_top_k,
         )
-        doc_hits = self._search_collection(self.doc_collection, query_embedding, where, self.doc_top_k, is_doc=True, tags_filter=tags_filter)
+        doc_hits = self._search_collection(
+            self.doc_collection, query_embedding, where, docs_top_k, is_doc=True, tags_filter=tags_filter
+        )
         steps.docs = doc_hits
         doc_ids = [h.doc_id for h in doc_hits] if doc_hits else []
         if len(doc_hits) < self.min_docs:
@@ -137,6 +192,10 @@ class ChromaIndex:
                 doc_hits.extend(padded)
                 steps.docs = doc_hits
                 doc_ids.extend([d.doc_id for d in padded if d.doc_id])
+        self._logger.info(
+            "retrieval_doc_cosine_ordering",
+            ordering=[{"doc_id": d.doc_id, "score": d.score} for d in doc_hits],
+        )
         self._logger.info(
             "retrieval_stage_result",
             stage="docs",
@@ -147,94 +206,170 @@ class ChromaIndex:
             self._log_metadata_keys(self.doc_collection, where, stage="docs", tags_filter=tags_filter)
 
         # Section-level
-        section_where = where
-        if doc_ids:
-            section_where = {"$and": [where, {"doc_id": {"$in": doc_ids}}]} if "$and" not in where else {"$and": [*where.get("$and", []), {"doc_id": {"$in": doc_ids}}]}  # type: ignore
-        self._logger.info(
-            "retrieval_stage_start",
-            stage="sections",
-            collection=getattr(self.section_collection, "name", "ingestion_sections"),
-            where=section_where,
-            requested=self.section_top_k,
-        )
-        use_rerank = False
-        if self.reranker and self.reranker.available():
-            if query.rerank_enabled is not None:
-                use_rerank = query.rerank_enabled
-            else:
-                use_rerank = bool(self.reranker.settings.rerank_enabled)
-        section_hits = self._search_collection(
-            self.section_collection,
-            query_embedding,
-            section_where,
-            self.section_top_k,
-            is_section=True,
-            tags_filter=tags_filter,
-        )
-        # Rerank sections
-        if use_rerank:
-            section_hits = self.reranker.rerank(query.query, section_hits, top_n=self.reranker.settings.rerank_top_n)
-        steps.sections = section_hits
-        self._logger.info(
-            "retrieval_stage_result",
-            stage="sections",
-            returned=len(section_hits),
-        )
-        if not section_hits:
-            self._log_metadata_keys(self.section_collection, section_where, stage="sections", tags_filter=tags_filter)
+        section_hits: List[RetrievalHit] = []
+        section_logs: List[dict] = []
+        if section_cosine_enabled and doc_ids:
+            self._logger.info(
+                "retrieval_stage_start",
+                stage="sections",
+                collection=getattr(self.section_collection, "name", "ingestion_sections"),
+                where=where,
+                requested=sections_top_k,
+                per_doc=len(doc_ids),
+            )
+            doc_score_map = {d.doc_id: d.score for d in doc_hits}
+            for doc_id in doc_ids:
+                doc_clause = {"doc_id": {"$in": [doc_id]}}
+                if "$and" in where:
+                    section_where = {"$and": [*where.get("$and", []), doc_clause]}
+                else:
+                    section_where = {"$and": [where, doc_clause]}
+                per_doc_hits = self._search_collection(
+                    self.section_collection,
+                    query_embedding,
+                    section_where,
+                    sections_top_k,
+                    is_section=True,
+                    tags_filter=tags_filter,
+                )
+                section_hits.extend(per_doc_hits)
+                section_logs.append(
+                    {
+                        "doc_id": doc_id,
+                        "sections": [{"section_id": h.section_id, "score": h.score} for h in per_doc_hits],
+                    }
+                )
+            self._logger.info("retrieval_section_cosine_ordering", per_doc=section_logs)
+            section_hits.sort(key=lambda h: (doc_score_map.get(h.doc_id, 0.0), h.score), reverse=True)
+            if max_sections_cap:
+                section_hits = section_hits[:max_sections_cap]
 
-        section_ids = [s.section_id for s in section_hits if s.section_id] if section_hits else None
-        chunk_where = where
-        clauses = []
-        if doc_ids:
-            clauses.append({"doc_id": {"$in": doc_ids}})
-        if section_ids:
-            clauses.append({"section_id": {"$in": section_ids}})
-        if clauses:
-            if "$and" in chunk_where:
-                chunk_where = {"$and": chunk_where.get("$and", []) + clauses}
-            else:
-                chunk_where = {"$and": clauses + [where]}
+        reranked_sections = section_hits
+        rerank_snapshot = section_hits
+        if use_rerank and section_hits:
+            top_n = min(self.reranker.settings.rerank_top_n, max_sections_cap) if max_sections_cap else self.reranker.settings.rerank_top_n
+            reranked_sections = self.reranker.rerank(query.query, section_hits, top_n=top_n)
+            rerank_snapshot = reranked_sections
+            self._logger.info(
+                "retrieval_rerank_scores",
+                scores=[
+                    {
+                        "doc_id": hit.doc_id,
+                        "section_id": hit.section_id,
+                        "rerank_score": hit.rerank_score if hit.rerank_score is not None else hit.score,
+                    }
+                    for hit in reranked_sections
+                ],
+                threshold=rerank_threshold,
+            )
+            if rerank_threshold:
+                before = len(reranked_sections)
+                reranked_sections = [
+                    hit for hit in reranked_sections if (hit.rerank_score if hit.rerank_score is not None else hit.score) >= rerank_threshold
+                ]
+                dropped = before - len(reranked_sections)
+                self._logger.info(
+                    "retrieval_rerank_threshold_applied",
+                    threshold=rerank_threshold,
+                    dropped=dropped,
+                    kept=len(reranked_sections),
+                )
+        if max_sections_cap and reranked_sections:
+            reranked_sections = reranked_sections[:max_sections_cap]
+        steps.sections = reranked_sections
+        if reranked_sections:
+            self._logger.info(
+                "retrieval_stage_result",
+                stage="sections",
+                returned=len(reranked_sections),
+            )
+        else:
+            self._logger.info(
+                "retrieval_stage_result",
+                stage="sections",
+                returned=0,
+                reason="section_search_disabled_or_empty" if not section_cosine_enabled else "no_hits",
+            )
+            if section_cosine_enabled:
+                probe_where = {"$and": [where, {"doc_id": {"$in": doc_ids}}]} if doc_ids else where
+                self._log_metadata_keys(self.section_collection, probe_where, stage="sections", tags_filter=tags_filter)
 
-        n_results = min(self.chunk_top_k, max_results * 3) if self.chunk_top_k else max_results * 3
-        self._logger.info(
-            "retrieval_stage_start",
-            stage="chunks",
-            collection=getattr(self.collection, "name", self.collection.name if hasattr(self.collection, "name") else "ingestion_chunks"),
-            where=chunk_where,
-            requested=n_results,
-        )
-        hits = self._search_collection(
-            self.collection,
-            query_embedding,
-            chunk_where,
-            n_results,
-            is_chunk=True,
-            tags_filter=tags_filter,
-        )
+        section_ids = [s.section_id for s in reranked_sections if s.section_id] if reranked_sections else None
+        final_hits = reranked_sections
+        limited: list[RetrievalHit] = []
+        if chunks_enabled:
+            chunk_where = where
+            clauses = []
+            if doc_ids:
+                clauses.append({"doc_id": {"$in": doc_ids}})
+            if section_ids:
+                clauses.append({"section_id": {"$in": section_ids}})
+            if clauses:
+                if "$and" in chunk_where:
+                    chunk_where = {"$and": chunk_where.get("$and", []) + clauses}
+                else:
+                    chunk_where = {"$and": clauses + [where]}
 
-        # enforce per-doc limit and max_results
-        limited = []
-        per_doc_counts: dict[str, int] = {}
-        for hit in sorted(hits, key=lambda h: h.score, reverse=True):
-            count = per_doc_counts.get(hit.doc_id, 0)
-            if self.topk_per_doc and count >= self.topk_per_doc:
-                continue
-            per_doc_counts[hit.doc_id] = count + 1
-            limited.append(hit)
-            if len(limited) >= max_results:
-                break
-        if not limited:
-            limited = self._fallback_metadata_search(query, chunk_where, max_results, tags_filter=tags_filter)
-        steps.chunks = limited
-        final_hits = section_hits if section_hits else limited
+            n_results = min(self.chunk_top_k, max_results * 3) if self.chunk_top_k else max_results * 3
+            self._logger.info(
+                "retrieval_stage_start",
+                stage="chunks",
+                collection=getattr(self.collection, "name", self.collection.name if hasattr(self.collection, "name") else "ingestion_chunks"),
+                where=chunk_where,
+                requested=n_results,
+            )
+            hits = self._search_collection(
+                self.collection,
+                query_embedding,
+                chunk_where,
+                n_results,
+                is_chunk=True,
+                tags_filter=tags_filter,
+            )
+
+            # enforce per-doc limit and max_results
+            per_doc_counts: dict[str, int] = {}
+            for hit in sorted(hits, key=lambda h: h.score, reverse=True):
+                count = per_doc_counts.get(hit.doc_id, 0)
+                if self.topk_per_doc and count >= self.topk_per_doc:
+                    continue
+                per_doc_counts[hit.doc_id] = count + 1
+                limited.append(hit)
+                if len(limited) >= max_results:
+                    break
+            if not limited:
+                limited = self._fallback_metadata_search(query, chunk_where, max_results, tags_filter=tags_filter)
+            steps.chunks = limited
+            if not final_hits:
+                final_hits = limited
+        else:
+            self._logger.info("retrieval_stage_skipped", stage="chunks", reason="disabled")
+            steps.chunks = []
         self._logger.info(
             "retrieval_chroma_results",
             tenant_id=query.tenant_id,
             hits=len(final_hits),
             requested=max_results,
-            total_raw=len(hits),
+            total_raw=len(limited) if chunks_enabled else 0,
         )
+        if rerank_snapshot:
+            kept_ids = {(h.doc_id, h.section_id) for h in reranked_sections}
+            discarded = [
+                {"doc_id": h.doc_id, "section_id": h.section_id, "rerank_score": h.rerank_score or h.score}
+                for h in rerank_snapshot
+                if (h.doc_id, h.section_id) not in kept_ids
+            ]
+            if discarded:
+                self._logger.info("retrieval_rerank_discarded", count=len(discarded), sections=discarded)
+        if reranked_sections:
+            self._logger.info(
+                "retrieval_final_sections",
+                total=len(reranked_sections),
+                sections=[
+                    {"doc_id": h.doc_id, "section_id": h.section_id, "score": h.score, "rerank_score": h.rerank_score}
+                    for h in reranked_sections
+                ],
+            )
         if not final_hits:
             self._log_metadata_keys(self.collection, chunk_where, stage="chunks", tags_filter=tags_filter)
         return final_hits[:max_results], steps
@@ -262,8 +397,6 @@ class ChromaIndex:
             if tags_filter and not self._metadata_matches_tags(meta.get("tags"), tags_filter):
                 continue
             score = 1 - dist if dist is not None else 0.0
-            if self.min_score is not None and score < self.min_score:
-                continue
             summary = meta.get("summary") or meta.get("title") or meta.get("name") or ""
             doc_id = meta.get("doc_id") or (cid if is_doc else meta.get("doc_id") or "")
             title = meta.get("title") or meta.get("name") or meta.get("summary") or summary
@@ -274,16 +407,18 @@ class ChromaIndex:
                 chunk_ids = raw_chunk_ids
             else:
                 chunk_ids = None
+            anchor_chunk_id = chunk_ids[0] if chunk_ids else None
             hits.append(
                 RetrievalHit(
                     doc_id=doc_id,
                     section_id=meta.get("section_id") if not is_doc else None,
-                    chunk_id=meta.get("chunk_id") if is_chunk else (meta.get("section_id") if is_section else cid),
+                    chunk_id=meta.get("chunk_id") if is_chunk else None,
                     text=summary,
                     score=score,
                     page_start=meta.get("page_start"),
                     page_end=meta.get("page_end"),
                     chunk_ids=chunk_ids,
+                    anchor_chunk_id=anchor_chunk_id if is_section else None,
                     title=title,
                     summary=summary or meta.get("summary"),
                     page=meta.get("page"),

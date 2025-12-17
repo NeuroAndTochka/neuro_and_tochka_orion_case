@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 
 import httpx
 from fastapi import HTTPException, status
@@ -13,7 +13,7 @@ class RetrievalClient:
         self.settings = settings
         self.http_client = http_client
 
-    async def search(self, query_payload: Dict[str, str]) -> Tuple[List[Dict[str, str]], Optional[Dict[str, int]]]:
+    async def search(self, query_payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, int]]]:
         if self.settings.mock_mode:
             return (
                 self._sanitize_hits(
@@ -51,8 +51,8 @@ class RetrievalClient:
             return self._sanitize_hits(payload), steps_info
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="retrieval response format invalid")
 
-    def _sanitize_hits(self, raw_hits: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        cleaned: List[Dict[str, str]] = []
+    def _sanitize_hits(self, raw_hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        cleaned: List[Dict[str, Any]] = []
         for raw in raw_hits:
             if not isinstance(raw, dict):
                 continue

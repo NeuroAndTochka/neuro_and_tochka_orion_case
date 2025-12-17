@@ -53,6 +53,19 @@ async def search(
     query.max_results = min(requested, max_cap, 50)
     if query.enable_filters is None:
         query.enable_filters = settings.enable_filters
+    query.docs_top_k = max(1, query.docs_top_k or settings.docs_top_k)
+    query.sections_top_k_per_doc = max(1, query.sections_top_k_per_doc or settings.sections_top_k_per_doc)
+    query.max_total_sections = max(1, query.max_total_sections or settings.max_total_sections)
+    if query.enable_section_cosine is None:
+        query.enable_section_cosine = settings.enable_section_cosine
+    if query.enable_rerank is None:
+        query.enable_rerank = query.rerank_enabled if query.rerank_enabled is not None else settings.enable_rerank
+    if query.rerank_score_threshold is None:
+        query.rerank_score_threshold = settings.rerank_score_threshold
+    else:
+        query.rerank_score_threshold = min(1.0, max(0.0, query.rerank_score_threshold))
+    if query.chunks_enabled is None:
+        query.chunks_enabled = settings.chunks_enabled
     try:
         search_result = index.search(query)
         if isinstance(search_result, tuple):
@@ -94,12 +107,19 @@ async def get_config(settings: Settings = Depends(get_settings)):
         "topk_per_doc": settings.topk_per_doc,
         "min_score": settings.min_score,
         "doc_top_k": settings.doc_top_k,
+        "docs_top_k": settings.docs_top_k,
         "section_top_k": settings.section_top_k,
+        "sections_top_k_per_doc": settings.sections_top_k_per_doc,
+        "max_total_sections": settings.max_total_sections,
         "chunk_top_k": settings.chunk_top_k,
         "rerank_enabled": settings.rerank_enabled,
+        "enable_rerank": settings.enable_rerank,
+        "rerank_score_threshold": settings.rerank_score_threshold,
         "rerank_model": settings.rerank_model,
         "rerank_top_n": settings.rerank_top_n,
         "enable_filters": settings.enable_filters,
+        "enable_section_cosine": settings.enable_section_cosine,
+        "chunks_enabled": settings.chunks_enabled,
         "min_docs": settings.min_docs,
     }
 
@@ -111,14 +131,39 @@ async def update_config(payload: dict, settings: Settings = Depends(get_settings
         "topk_per_doc",
         "min_score",
         "doc_top_k",
+        "docs_top_k",
         "section_top_k",
+        "sections_top_k_per_doc",
+        "max_total_sections",
         "chunk_top_k",
         "rerank_enabled",
+        "enable_rerank",
+        "rerank_score_threshold",
         "rerank_model",
         "rerank_top_n",
         "enable_filters",
+        "enable_section_cosine",
+        "chunks_enabled",
         "min_docs",
     ]:
         if field in payload and payload[field] is not None:
             setattr(settings, field, payload[field])
+    # keep backward-compatible mirrors
+    if payload.get("doc_top_k") is not None or payload.get("docs_top_k") is not None:
+        val = payload.get("docs_top_k", payload.get("doc_top_k"))
+        if val is not None:
+            settings.docs_top_k = max(1, int(val))
+    if payload.get("section_top_k") is not None or payload.get("sections_top_k_per_doc") is not None:
+        val = payload.get("sections_top_k_per_doc", payload.get("section_top_k"))
+        if val is not None:
+            settings.sections_top_k_per_doc = max(1, int(val))
+    settings.doc_top_k = settings.docs_top_k
+    settings.section_top_k = settings.sections_top_k_per_doc
+    settings.enable_rerank = settings.enable_rerank if settings.enable_rerank is not None else settings.rerank_enabled
+    settings.rerank_enabled = bool(settings.enable_rerank)
+    settings.rerank_score_threshold = min(1.0, max(0.0, float(settings.rerank_score_threshold or 0.0)))
+    if payload.get("max_total_sections") is not None:
+        settings.max_total_sections = max(1, int(payload.get("max_total_sections")))
+    settings.max_total_sections = max(1, settings.max_total_sections)
+    settings.chunks_enabled = bool(settings.chunks_enabled)
     return await get_config(settings)
