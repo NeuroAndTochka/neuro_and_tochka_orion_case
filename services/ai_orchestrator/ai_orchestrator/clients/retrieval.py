@@ -32,7 +32,8 @@ class RetrievalClient:
             )
         if not self.settings.retrieval_url:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="retrieval url missing")
-        response = await self.http_client.post(self.settings.retrieval_url, json=query_payload)
+        # Retrieval can be slow; disable client-side timeout to avoid premature failures.
+        response = await self.http_client.post(self.settings.retrieval_url, json=query_payload, timeout=None)
         response.raise_for_status()
         payload = response.json()
         steps_info: Optional[Dict[str, int]] = None

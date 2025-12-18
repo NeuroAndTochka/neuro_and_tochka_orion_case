@@ -42,12 +42,14 @@ services:
       - visior
 
   open-webui:
-    image: ghcr.io/open-webui/open-webui:main
+    image: ghcr.io/open-webui/open-webui:v0.6.41
+    restart: unless-stopped
     container_name: open_webui
     environment:
       - OPENAI_API_BASE_URL=http://openwebui_adapter:8093/v1
       - OPENAI_API_KEY=${OPENAI_API_KEY:-dev-openai-key}
       - ENABLE_OPENAI_API=true
+      
     ports:
       - "3000:8080"
     depends_on:

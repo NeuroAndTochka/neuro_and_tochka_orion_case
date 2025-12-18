@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     auth_audience: Optional[str] = None
     auth_timeout_seconds: float = 5.0
-    http_timeout_seconds: float = 10.0
+    http_timeout_seconds: float = 0.0
     rate_limit_per_minute: int = 120
     mock_mode: bool = False
     # Force all UI traffic to the shared observer tenant to keep data consistent.

@@ -15,7 +15,8 @@ configure_logging(settings.log_level)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with httpx.AsyncClient(timeout=settings.http_timeout_seconds) as client:
+    timeout = None if settings.http_timeout_seconds == 0 else settings.http_timeout_seconds
+    async with httpx.AsyncClient(timeout=timeout) as client:
         app.state.http_client = client
         yield
 
