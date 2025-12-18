@@ -10,11 +10,50 @@ services:
       API_GATEWAY_PORT: "8080"
       API_GATEWAY_LOG_LEVEL: info
       API_GATEWAY_SAFETY_BASE_URL: http://safety_service:8081
-      API_GATEWAY_MOCK_MODE: "true"
+      API_GATEWAY_ORCHESTRATOR_BASE_URL: http://ai_orchestrator:8070
+      API_GATEWAY_INGESTION_BASE_URL: http://ingestion_service:8050
+      API_GATEWAY_DOCUMENTS_BASE_URL: http://document_service:8060
+      API_GATEWAY_MOCK_MODE: "false"
     ports:
       - "8080:8080"
     depends_on:
       - safety_service
+    networks:
+      - visior
+
+  openwebui_adapter:
+    build:
+      context: ./services/openwebui_adapter
+    container_name: openwebui_adapter
+    environment:
+      ADAPTER_HOST: 0.0.0.0
+      ADAPTER_PORT: "8093"
+      ADAPTER_LOG_LEVEL: info
+      ADAPTER_GATEWAY_BASE_URL: http://api_gateway:8080
+      ADAPTER_GATEWAY_ASSISTANT_PATH: /api/v1/assistant/query
+      ADAPTER_AUTH_MODE: passthrough
+      ADAPTER_DEFAULT_MODEL_ID: orion-rag
+      ADAPTER_DEFAULT_LANGUAGE: ru
+    ports:
+      - "8093:8093"
+    depends_on:
+      - api_gateway
+    networks:
+      - visior
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open_webui
+    environment:
+      - OPENAI_API_BASE_URL=http://openwebui_adapter:8093/v1
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-dev-openai-key}
+      - ENABLE_OPENAI_API=true
+    ports:
+      - "3000:8080"
+    depends_on:
+      - openwebui_adapter
+    volumes:
+      - openwebui-data:/app/backend/data
     networks:
       - visior
 
@@ -285,3 +324,4 @@ volumes:
   minio-data:
   chroma-data:
   postgres-data:
+  openwebui-data:

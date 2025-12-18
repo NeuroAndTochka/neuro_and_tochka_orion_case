@@ -297,8 +297,8 @@ class ChromaIndex:
         section_ids = [s.section_id for s in reranked_sections if s.section_id] if reranked_sections else None
         final_hits = reranked_sections
         limited: list[RetrievalHit] = []
+        chunk_where = where
         if chunks_enabled:
-            chunk_where = where
             clauses = []
             if doc_ids:
                 clauses.append({"doc_id": {"$in": doc_ids}})
