@@ -11,13 +11,13 @@ class Settings(BaseSettings):
     port: int = 8090
     log_level: str = "info"
 
-    llm_runtime_url: str | None = None
+    llm_runtime_url: str | None = "https://openrouter.ai/api/v1/chat/completions"
     runtime_api_key: str | None = None
-    default_model: str = "mock-model"
-    max_tool_steps: int = 3
+    default_model: str = "openai/gpt-5-mini"
+    max_tool_steps: int = 10
     enable_json_mode: bool = True
     mcp_proxy_url: str | None = None
-    mock_mode: bool = True
+    mock_mode: bool = False
 
 
 @lru_cache

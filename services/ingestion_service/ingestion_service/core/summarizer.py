@@ -21,10 +21,15 @@ class Summarizer:
         self.settings = settings
         self._mock = settings.mock_mode or not settings.summary_api_base
         self._logger = structlog.get_logger(__name__)
-        self.system_prompt = (
-            "Сделай короткое русскоязычное резюме секции документа (1-2 предложения). "
-            "Без воды, без списков, только факты."
-        )
+        self.system_prompt = """
+        Сделай структурированное резюме секции в 4–8 буллетов.
+
+        Правила:
+        - Максимум 900 символов.
+        - Сохраняй команды, параметры, имена пакетов/сервисов/файлов дословно.
+        - Если есть процедура/шаги — перечисли их нумерованным списком.
+        - Не добавляй ничего от себя, только то, что есть в тексте.
+        """
         self.model = settings.summary_model
         self.use_roles = True
 

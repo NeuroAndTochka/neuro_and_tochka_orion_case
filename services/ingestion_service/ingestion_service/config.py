@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     summary_api_base: str | None = None  # OpenAI-compatible endpoint для суммаризации
     summary_api_key: str | None = None
-    summary_model: str = "openai/gpt-4o-mini"
+    summary_model: str = "openai/gpt-5-nano"
     summary_referer: str | None = None
     summary_title: str | None = None
     embedding_max_attempts: int = 3

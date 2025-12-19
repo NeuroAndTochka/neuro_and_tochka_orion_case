@@ -14,19 +14,19 @@ class Settings(BaseSettings):
 
     mock_mode: bool = True
     max_results: int = 5
-    topk_per_doc: int = 0
+    topk_per_doc: int = 2
     min_score: float | None = None
     doc_top_k: int = 5
     section_top_k: int = 10
-    docs_top_k: int | None = Field(default=None, ge=1)
-    sections_top_k_per_doc: int | None = Field(default=None, ge=1)
-    max_total_sections: int | None = Field(default=None, ge=1)
+    docs_top_k: int | None = Field(default=5, ge=1)
+    sections_top_k_per_doc: int | None = Field(default=10, ge=1)
+    max_total_sections: int | None = Field(default=10, ge=1)
     chunk_top_k: int = 20
     enable_filters: bool = False
     min_docs: int = 5
-    rerank_score_threshold: float = Field(default=0.0, ge=0.0, le=1.0)
+    rerank_score_threshold: float = Field(default=0.2, ge=0.0, le=1.0)
     enable_section_cosine: bool = True
-    enable_rerank: bool | None = None
+    enable_rerank: bool | None = True
     chunks_enabled: bool = False
     window_radius: int | None = Field(default=None, ge=0, env=["RAG_WINDOW_RADIUS", "RETR_WINDOW_RADIUS"])
 
@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     embedding_max_attempts: int = 2
     embedding_retry_delay_seconds: float = 1.0
 
-    rerank_enabled: bool = False
-    rerank_model: str = "gpt-4o-mini"
+    rerank_enabled: bool = True
+    rerank_model: str = "openai/gpt-5-nano"
     rerank_api_base: str | None = None
     rerank_api_key: str | None = None
     rerank_top_n: int = 5

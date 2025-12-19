@@ -62,8 +62,8 @@ async def ui() -> str:
 
     <section>
       <h3>Upload документ</h3>
-      <label for="ingestFile">Файл</label>
-      <input id="ingestFile" type="file" />
+      <label for="ingestFile">Файлы (можно несколько)</label>
+      <input id="ingestFile" type="file" multiple />
       <label for="docId">doc_id</label>
       <input id="docId" placeholder="doc_xxx" />
       <label for="docName">name</label>
@@ -290,17 +290,27 @@ async def ui() -> str:
     }
     async function runIngestion() {
       const fileInput = document.getElementById("ingestFile");
-      if (!fileInput.files.length) { log("ingestLog", {error: "Выберите файл"}); return; }
-      const fd = new FormData();
-      fd.append("file", fileInput.files[0]);
-      const res = await fetch("/internal/observer/ingestion/enqueue", {
-        method: "POST",
-        headers: {"X-Tenant-ID": document.getElementById("tenant").value},
-        body: fd
-      });
-      const data = await res.json();
-      log("ingestLog", data);
-      if (data.job_id) document.getElementById("ingestStatusJob").value = data.job_id;
+      const files = Array.from(fileInput.files || []);
+      if (!files.length) { log("ingestLog", {error: "Выберите файлы"}); return; }
+      const tenant = document.getElementById("tenant").value;
+      const results = await Promise.all(files.map(async (file) => {
+        try {
+          const fd = new FormData();
+          fd.append("file", file);
+          const res = await fetch("/internal/observer/ingestion/enqueue", {
+            method: "POST",
+            headers: {"X-Tenant-ID": tenant},
+            body: fd
+          });
+          const data = await res.json();
+          return {file: file.name, status: res.status, ok: res.ok, data};
+        } catch (e) {
+          return {file: file.name, ok: false, error: String(e)};
+        }
+      }));
+      log("ingestLog", results);
+      const firstJob = results.find(r => r.data && r.data.job_id);
+      if (firstJob && firstJob.data.job_id) document.getElementById("ingestStatusJob").value = firstJob.data.job_id;
     }
     async function checkIngestionStatus() {
       const jobId = document.getElementById("ingestStatusJob").value;

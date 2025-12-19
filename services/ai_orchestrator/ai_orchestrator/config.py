@@ -16,23 +16,23 @@ class Settings(BaseSettings):
     mcp_proxy_url: str | None = None
     llm_runtime_url: str | None = None
     llm_api_key: str | None = None
-    default_model: str = "gpt-4o-mini"
+    default_model: str = "openai/gpt-5-mini"
     model_strategy: str = "rag_mcp"
-    prompt_token_budget: int = 4096
-    context_token_budget: int = 4096
-    max_tool_steps: int = 4
+    prompt_token_budget: int = 100000
+    context_token_budget: int = 100000
+    max_tool_steps: int = 25
     window_radius: int | None = Field(
-        default=None,
+        default=2,
         ge=0,
         description="Per-side window radius (R); total chunks requested = 2R+1",
         env=["RAG_WINDOW_RADIUS", "ORCH_WINDOW_RADIUS"],
     )
-    window_initial: int | None = Field(default=None, env="ORCH_WINDOW_INITIAL")
-    window_step: int | None = Field(default=None, env="ORCH_WINDOW_STEP")
-    window_max: int | None = Field(default=None, env="ORCH_WINDOW_MAX")
+    window_initial: int | None = Field(default=1, env="ORCH_WINDOW_INITIAL")
+    window_step: int | None = Field(default=1, env="ORCH_WINDOW_STEP")
+    window_max: int | None = Field(default=2, env="ORCH_WINDOW_MAX")
     legacy_total_window: int | None = Field(default=None, env="MCP_PROXY_MAX_CHUNK_WINDOW")
     retry_attempts: int = 1
-    mock_mode: bool = True
+    mock_mode: bool = False
     default_user_id: str = "anonymous"
     default_tenant_id: str = "observer_tenant"
     window_radius_baseline: int = 0

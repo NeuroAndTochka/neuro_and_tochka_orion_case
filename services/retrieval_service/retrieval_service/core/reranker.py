@@ -59,7 +59,7 @@ class SectionReranker:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a reranker. Return JSON only.",
+                        "content": "You are a reranker. Return JSON only. No explanations.",
                     },
                     {"role": "user", "content": prompt},
                 ],

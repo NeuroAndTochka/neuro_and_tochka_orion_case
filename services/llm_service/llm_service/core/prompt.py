@@ -11,8 +11,11 @@ def build_rag_prompt(system_prompt: str, messages: List[Message], chunks: List[C
         {
             "role": "system",
             "content": (
-                "Reason step by step, keep your chain-of-thought hidden, and only share the final answer. "
-                "Ground replies in the provided context and cite sources when possible."
+                """You must answer using ONLY the provided context. If the context is insufficient, say what is missing and ask for the exact missing detail.
+                Do NOT request additional tools here.
+                Do NOT reveal chain-of-thought. Provide a concise final answer.
+                Cite sources for each factual claim using [doc_id/section_id]."""
+
             ),
         },
     ]
@@ -24,7 +27,10 @@ def build_rag_prompt(system_prompt: str, messages: List[Message], chunks: List[C
         prompt_messages.append(
             {
                 "role": "system",
-                "content": "Below are relevant sections from Orion documentation. Use them when answering.\n" + context_block,
+                "content": """Below are relevant sections from Orion documentation. Use them when answering.
+                Context may be incomplete. Prefer quoting the exact command/parameter names.
+                Do not restate large excerpts. Use short quotes only when necessary.\n
+                """ + context_block,
             }
         )
     prompt_messages.extend(message.model_dump() for message in messages)

@@ -52,6 +52,8 @@ services:
       - GLOBAL_LOG_LEVEL=DEBUG
       - AIOHTTP_CLIENT_TIMEOUT=
       - OFFLINE_MODE=True
+      - ENABLE_FOLLOW_UP_GENERATION=false
+
       
     ports:
       - "3000:8080"
@@ -182,8 +184,41 @@ services:
       INGEST_SUMMARY_API_KEY: ${INGEST_SUMMARY_API_KEY}
       INGEST_SUMMARY_MODEL: openai/gpt-5-nano
       INGEST_CHROMA_HOST: http://chroma:8000
+      INGEST_WORKER_COUNT: "1"
+
     ports:
       - "8050:8050"
+    depends_on:
+      - minio
+      - minio-setup
+      - chroma
+    networks:
+      - visior
+
+  # Масштабируемые воркеры ingestion без публичного порта
+  ingestion_worker:
+    build:
+      context: ./services/ingestion_service
+    environment:
+      INGEST_HOST: 0.0.0.0
+      INGEST_PORT: "8050"
+      INGEST_LOG_LEVEL: info
+      INGEST_MOCK_MODE: "false"
+      INGEST_DOC_SERVICE_BASE_URL: http://document_service:8060
+      INGEST_S3_ENDPOINT: http://minio:9000
+      INGEST_S3_BUCKET: visior-documents
+      INGEST_S3_ACCESS_KEY: minio
+      INGEST_S3_SECRET_KEY: minio123
+      INGEST_S3_SECURE: "false"
+      INGEST_REDIS_URL: redis://redis:6379/0
+      INGEST_EMBEDDING_API_BASE: https://openrouter.ai/api/v1
+      INGEST_EMBEDDING_API_KEY: ${INGEST_SUMMARY_API_KEY}
+      INGEST_EMBEDDING_MODEL: baai/bge-m3
+      INGEST_SUMMARY_API_BASE: https://openrouter.ai/api/v1
+      INGEST_SUMMARY_API_KEY: ${INGEST_SUMMARY_API_KEY}
+      INGEST_SUMMARY_MODEL: openai/gpt-5-nano
+      INGEST_CHROMA_HOST: http://chroma:8000
+      INGEST_WORKER_COUNT: "1"
     depends_on:
       - minio
       - minio-setup
