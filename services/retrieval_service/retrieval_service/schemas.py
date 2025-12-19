@@ -35,6 +35,7 @@ class RetrievalStepResults(BaseModel):
     docs: List[RetrievalHit] = Field(default_factory=list)
     sections: List[RetrievalHit] = Field(default_factory=list)
     chunks: List[RetrievalHit] = Field(default_factory=list)
+    bm25: Optional[List[RetrievalHit]] = None
 
 
 class RetrievalHit(BaseModel):
@@ -44,6 +45,7 @@ class RetrievalHit(BaseModel):
     text: Optional[str] = Field(default=None, exclude=True)
     score: float
     rerank_score: Optional[float] = None
+    bm25_score: Optional[float] = None
     anchor_chunk_id: Optional[str] = None
     page_start: Optional[int] = None
     page_end: Optional[int] = None

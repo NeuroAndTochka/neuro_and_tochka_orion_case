@@ -9,6 +9,7 @@ import structlog
 from retrieval_service.core.embedding import EmbeddingClient
 from retrieval_service.core.reranker import SectionReranker
 from retrieval_service.schemas import RetrievalHit, RetrievalQuery, RetrievalStepResults
+from retrieval_service.core.bm25 import BM25Index
 
 try:  # pragma: no cover - optional dependency
     import chromadb  # type: ignore
@@ -89,6 +90,9 @@ class ChromaIndex:
         enable_rerank: bool | None = None,
         rerank_score_threshold: float = 0.0,
         chunks_enabled: bool = False,
+        bm25: BM25Index | None = None,
+        bm25_top_k: int = 50,
+        bm25_weight: float = 0.5,
     ) -> None:
         self.client = client
         self.collection = client.get_or_create_collection(collection_name)
@@ -109,6 +113,9 @@ class ChromaIndex:
         self.chunks_enabled = chunks_enabled
         self.min_docs = min_docs or doc_top_k
         self._logger = structlog.get_logger(__name__)
+        self.bm25 = bm25
+        self.bm25_top_k = bm25_top_k
+        self.bm25_weight = bm25_weight
 
     def _build_where(self, query: RetrievalQuery) -> dict:
         conditions = [{"tenant_id": query.tenant_id}]
@@ -244,11 +251,49 @@ class ChromaIndex:
             if max_sections_cap:
                 section_hits = section_hits[:max_sections_cap]
 
-        reranked_sections = section_hits
-        rerank_snapshot = section_hits
-        if use_rerank and section_hits:
+        bm25_hits: List[RetrievalHit] = []
+        if self.bm25:
+            try:
+                bm25_hits = self.bm25.search(query.query, self.bm25_top_k)
+            except Exception as exc:  # pragma: no cover - optional
+                self._logger.warning("bm25_search_failed", error=str(exc))
+        combined_hits = section_hits
+        if bm25_hits:
+            steps.bm25 = bm25_hits
+            dense_max = max((h.score for h in section_hits), default=1.0) or 1.0
+            bm25_max = max((h.score for h in bm25_hits), default=1.0) or 1.0
+            weight = min(1.0, max(0.0, self.bm25_weight))
+            merged = {}
+            dense_norms = {}
+            for hit in section_hits:
+                key = f"{hit.doc_id}::{hit.section_id or hit.chunk_id}"
+                merged[key] = hit
+                dense_norms[key] = hit.score / dense_max
+            for hit in bm25_hits:
+                key = f"{hit.doc_id}::{hit.section_id or hit.chunk_id}"
+                raw_bm25 = hit.score
+                bm25_norm = raw_bm25 / bm25_max
+                if key in merged:
+                    base = merged[key]
+                    dense_norm = dense_norms.get(key, 0.0)
+                    combined_score = (1 - weight) * dense_norm + weight * bm25_norm
+                    base.score = combined_score
+                    base.bm25_score = raw_bm25
+                else:
+                    combined_score = weight * bm25_norm
+                    hit.score = combined_score
+                    hit.bm25_score = raw_bm25
+                    merged[key] = hit
+            combined_hits = list(merged.values())
+            combined_hits.sort(key=lambda h: h.score, reverse=True)
+            if max_sections_cap:
+                combined_hits = combined_hits[:max_sections_cap]
+
+        reranked_sections = combined_hits if bm25_hits else section_hits
+        rerank_snapshot = reranked_sections
+        if use_rerank and combined_hits:
             top_n = min(self.reranker.settings.rerank_top_n, max_sections_cap) if max_sections_cap else self.reranker.settings.rerank_top_n
-            reranked_sections = self.reranker.rerank(query.query, section_hits, top_n=top_n)
+            reranked_sections = self.reranker.rerank(query.query, combined_hits, top_n=top_n)
             rerank_snapshot = reranked_sections
             self._logger.info(
                 "retrieval_rerank_scores",

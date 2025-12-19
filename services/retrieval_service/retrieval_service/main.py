@@ -7,6 +7,7 @@ from retrieval_service.routers import chunks
 from retrieval_service.core.index import InMemoryIndex, ChromaIndex, chromadb
 from retrieval_service.core.embedding import EmbeddingClient
 from retrieval_service.core.reranker import SectionReranker
+from retrieval_service.core.bm25 import BM25Index, ensure_index_dir
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -24,6 +25,13 @@ def build_index():
             else chromadb.PersistentClient(path=settings.chroma_path)
         )
         embedding = EmbeddingClient(settings)
+        bm25 = None
+        if settings.bm25_enabled:
+            try:
+                ensure_index_dir(settings.bm25_index_path)
+                bm25 = BM25Index(settings.bm25_index_path)
+            except Exception as exc:  # pragma: no cover - optional
+                raise RuntimeError(f"BM25 index not available at {settings.bm25_index_path}: {exc}") from exc
         return ChromaIndex(
             client=client,
             collection_name=settings.chroma_collection,
@@ -42,6 +50,9 @@ def build_index():
             enable_rerank=settings.enable_rerank,
             rerank_score_threshold=settings.rerank_score_threshold,
             chunks_enabled=settings.chunks_enabled,
+            bm25=bm25,
+            bm25_top_k=settings.bm25_top_k,
+            bm25_weight=settings.bm25_weight,
         )
     raise RuntimeError(f"Unsupported vector backend: {settings.vector_backend}")
 

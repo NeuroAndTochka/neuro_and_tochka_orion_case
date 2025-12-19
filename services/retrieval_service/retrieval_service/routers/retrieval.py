@@ -121,6 +121,10 @@ async def get_config(settings: Settings = Depends(get_settings)):
         "enable_section_cosine": settings.enable_section_cosine,
         "chunks_enabled": settings.chunks_enabled,
         "min_docs": settings.min_docs,
+        "bm25_enabled": settings.bm25_enabled,
+        "bm25_index_path": settings.bm25_index_path,
+        "bm25_top_k": settings.bm25_top_k,
+        "bm25_weight": settings.bm25_weight,
     }
 
 
@@ -145,6 +149,9 @@ async def update_config(payload: dict, settings: Settings = Depends(get_settings
         "enable_section_cosine",
         "chunks_enabled",
         "min_docs",
+        "bm25_enabled",
+        "bm25_top_k",
+        "bm25_weight",
     ]:
         if field in payload and payload[field] is not None:
             setattr(settings, field, payload[field])
@@ -166,4 +173,8 @@ async def update_config(payload: dict, settings: Settings = Depends(get_settings
         settings.max_total_sections = max(1, int(payload.get("max_total_sections")))
     settings.max_total_sections = max(1, settings.max_total_sections)
     settings.chunks_enabled = bool(settings.chunks_enabled)
+    if payload.get("bm25_top_k") is not None:
+        settings.bm25_top_k = max(1, int(payload.get("bm25_top_k")))
+    if payload.get("bm25_weight") is not None:
+        settings.bm25_weight = min(1.0, max(0.0, float(payload.get("bm25_weight"))))
     return await get_config(settings)

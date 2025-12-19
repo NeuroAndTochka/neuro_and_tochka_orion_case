@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     rerank_api_key: str | None = None
     rerank_top_n: int = 5
 
+    bm25_enabled: bool = False
+    bm25_index_path: str = "./.bm25_index"
+    bm25_top_k: int = 50
+    bm25_weight: float = Field(default=0.5, ge=0.0, le=1.0)
+
     def model_post_init(self, __context) -> None:  # type: ignore[override]
         self.docs_top_k = max(1, self.docs_top_k or self.doc_top_k)
         self.doc_top_k = self.docs_top_k
