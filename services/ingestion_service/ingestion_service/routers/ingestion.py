@@ -169,6 +169,9 @@ async def enqueue_document(
             chunk_size=settings.chunk_size,
             chunk_overlap=settings.chunk_overlap,
             vector_store=vector_store,
+            product=product,
+            version=version,
+            tags=tags,
         )
 
     return EnqueueResponse(
@@ -254,7 +257,6 @@ async def update_summarizer_config(
     updated = summarizer.update_config(
         system_prompt=payload.system_prompt,
         model=payload.model,
-        max_tokens=payload.max_tokens,
         use_roles=payload.use_roles,
     )
     return SummarizerConfig(**updated)

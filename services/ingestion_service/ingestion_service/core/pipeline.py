@@ -93,8 +93,18 @@ def process_file(
     chunk_size: int,
     chunk_overlap: int,
     vector_store,
+    product: str | None = None,
+    version: str | None = None,
+    tags: str | list[str] | None = None,
 ) -> bool:
     start_time = time.perf_counter()
+    tags_list: list[str] = []
+    if tags:
+        if isinstance(tags, str):
+            tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+        elif isinstance(tags, (list, tuple, set)):
+            tags_list = [str(t).strip() for t in tags if str(t).strip()]
+    tags_value = ", ".join(tags_list) if tags_list else None
     logger.info(
         "ingestion_process_started",
         job_id=ticket.job_id,
@@ -286,16 +296,46 @@ def process_file(
 
         # vector store запись
         if vector_store:
-            vector_store.upsert_document(ticket.doc_id, ticket.tenant_id, doc_embedding, {"title": meta.get("title")})
+            doc_title = meta.get("title") or ticket.doc_id
+            doc_metadata = {"title": doc_title}
+            if product:
+                doc_metadata["product"] = product
+            if version:
+                doc_metadata["version"] = version
+            if tags_value:
+                doc_metadata["tags"] = tags_value
+            vector_store.upsert_document(
+                ticket.doc_id,
+                ticket.tenant_id,
+                doc_embedding,
+                doc_metadata,
+            )
+            # Enrich section metadata to keep filters working inside Chroma
+            section_keys = set()
+            for payload in sections_payload:
+                if product:
+                    payload["product"] = product
+                if version:
+                    payload["version"] = version
+                if tags_value:
+                    payload["tags"] = tags_value
+                section_keys.update(k for k in payload.keys() if k != "embedding")
             vector_store.upsert_sections(ticket.doc_id, ticket.tenant_id, section_embeddings, sections_payload)
             if chunk_embeddings:
-                vector_store.upsert_chunks(ticket.doc_id, ticket.tenant_id, chunk_embeddings, chunk_pairs)
+                extra_meta = {k: v for k, v in {"product": product, "version": version, "tags": tags_value}.items() if v is not None}
+                vector_store.upsert_chunks(ticket.doc_id, ticket.tenant_id, chunk_embeddings, chunk_pairs, extra_meta=extra_meta or None)
+                chunk_keys = ["tenant_id", "doc_id", "chunk_id", "text", "page", "chunk_index"] + list(extra_meta.keys()) if extra_meta else ["tenant_id", "doc_id", "chunk_id", "text", "page", "chunk_index"]
+            else:
+                chunk_keys = ["tenant_id", "doc_id", "chunk_id", "text", "page", "chunk_index"]
             logger.debug(
                 "ingestion_vectorstore_upserted",
                 doc_id=ticket.doc_id,
                 tenant_id=ticket.tenant_id,
                 sections=len(sections_payload),
                 chunks=len(chunk_pairs),
+                doc_meta_keys=list(doc_metadata.keys()),
+                section_meta_keys=sorted(section_keys) if section_keys else None,
+                chunk_meta_keys=chunk_keys,
             )
 
         jobs.update(ticket.job_id, status="indexed", storage_uri=ticket.storage_uri)

@@ -44,7 +44,6 @@ class JobStatusResponse(BaseModel):
 class SummarizerConfig(BaseModel):
     system_prompt: Optional[str] = None
     model: Optional[str] = None
-    max_tokens: Optional[int] = None
     use_roles: Optional[bool] = None
 
 

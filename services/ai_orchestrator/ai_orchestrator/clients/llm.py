@@ -31,6 +31,6 @@ class LLMClient:
             }
         if not self.settings.llm_url:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="llm url missing")
-        response = await self.http_client.post(self.settings.llm_url, json=payload, timeout=30)
+        response = await self.http_client.post(self.settings.llm_url, json=payload)
         response.raise_for_status()
         return response.json()

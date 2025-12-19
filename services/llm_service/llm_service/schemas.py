@@ -19,11 +19,9 @@ class ContextChunk(BaseModel):
 
 
 class GenerationParams(BaseModel):
-    max_tokens: Optional[int] = None
-    temperature: float = 0.2
-    top_p: float = 0.95
-    presence_penalty: float = 0.0
-    frequency_penalty: float = 0.0
+    top_p: Optional[float] = 0.95
+    presence_penalty: Optional[float] = 0.0
+    frequency_penalty: Optional[float] = 0.0
     stop: Optional[List[str]] = None
 
 

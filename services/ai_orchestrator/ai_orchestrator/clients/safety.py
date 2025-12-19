@@ -18,6 +18,6 @@ class SafetyClient:
             return {"status": "allowed"}
         if not self.settings.safety_url:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="safety url missing")
-        response = await self.http_client.post(self.settings.safety_url, json=payload, timeout=10)
+        response = await self.http_client.post(self.settings.safety_url, json=payload)
         response.raise_for_status()
         return response.json()

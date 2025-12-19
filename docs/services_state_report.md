@@ -1,17 +1,17 @@
 # Состояние микросервисов (main)
 
-Статусы: `Prod ready` — можно разворачивать (mock-флаги для локалки остаются); `Skeleton` — базовый API без продовой интеграции; `Needs work` — известные пробелы.
+Статусы: `Mock` — готово для локалки/тестов, но требует внешних сервисов для прод; `Baseline` — рабочий функционал без сложных зависимостей; `Playground` — утилитарные возможности без жёстких контрактов.
 
 | Сервис | Статус | Комментарии |
 | --- | --- | --- |
-| API Gateway | Skeleton/Mock | FastAPI edge, клиенты к safety/orchestrator/document/ingestion. Mock auth/rate-limit, нет продовой авторизации. |
-| Safety Service | Skeleton | Input/output guard с правилами PII/keywords, без внешних моделей, API стабильный. |
-| MCP Tools Proxy | Prod ready (mock data) | MCP-инструменты с rate-limit. Репозиторий документов in-memory, набор инструментов базовый. |
-| LLM Service | Skeleton/Mock | Оркестратор LLM + MCP, mock runtime/proxy по умолчанию; JSON-mode и лимиты шагов, нет реального runtime. |
-| AI Orchestrator | Skeleton/Mock | Контекст из Retrieval → LLM → Safety output, минимальный context builder, mock retrieval/llm. |
-| Document Service | Prod ready (SQLite/MinIO-ready) | Async SQLAlchemy, CRUD документов/секций, S3/local storage, tenant isolation. В проде требует Postgres+S3. |
-| Ingestion Service | Skeleton + pipeline | Upload → embeddings + LLM summary → секции в Document Service, опциональный Chroma vector store. JobStore in-memory/Redis, фоновые задачи вместо очереди, без ретраев S3. |
-| Retrieval Service | Skeleton/Mock | In-memory поиск, контракт `/internal/retrieval/search`, готов к замене на векторную БД. |
-| ML Observer Service | Skeleton/Mock | FastAPI+SQLite, эксперименты/раны/документы, mock retrieval/LLM, прокси в ingestion/doc при заданных URL, UI `/ui`, без auth. |
+| API Gateway | Mock | Edge на FastAPI, инMemory rate limit, mock introspection; проксирует safety/orchestrator/ingestion/doc. Нет реальной авторизации, Document клиент зовёт нестандартный `/internal/documents/list`. |
+| Safety Service | Baseline | Input/output guard с блоклистом, PII‑редакцией и prompt‑injection детектором. Без внешних моделей. |
+| MCP Tools Proxy | Baseline (mock data) | Инструменты MCP + rate limit, документы в in-memory репозитории. `read_chunk_window` требует заданного Retrieval URL. |
+| LLM Service | Mock | Tool-loop над OpenAI‑style runtime и MCP proxy, JSON‑mode флаг. По умолчанию mock runtime/proxy; нет safety. |
+| AI Orchestrator | Mock | Retrieval → LLM runtime → MCP инструменты, прогрессивное окно чанков. Output safety не подключён; mock режим возвращает заглушки. |
+| Document Service | Baseline | Async SQLAlchemy + SQLite/S3‑клиент. При `mock_mode=false` требует Postgres+S3, иначе падает при старте. Tenant isolation на чтение. |
+| Ingestion Service | Mock | Очередь/JobStore in-memory или Redis, обработка файла → чанки/summary/эмбеддинги, запись в Document Service и Chroma (если включено). Worker background, без надёжной очереди. |
+| Retrieval Service | Mock/Chroma | Ступенчатый поиск doc/section/chunk в Chroma, фильтры и rerank опционален; есть chunk window endpoint. В mock режиме отдаёт фиксированные hits. |
+| ML Observer Service | Playground | SQLite + FastAPI, прокси в ingestion/doc/retrieval/orchestrator при наличии URL, mock retrieval/LLM иначе. UI `/ui`, без авторизации. |
 
-Общее: код покрыт unit/integration тестами; для прод-окружения нужно отключать mock_mode и подключать реальные DSN/URL/хранилища (ingestion, retrieval, LLM runtime, auth в gateway).***
+Общее: большинство сервисов стартуют в mock режиме; для прод нужно задать реальные DSN/ключи/URL и включить внешние хранилища и runtime.

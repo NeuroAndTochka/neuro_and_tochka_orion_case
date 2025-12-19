@@ -8,6 +8,7 @@
 - LLM Service (генерация, MCP)
 - MCP Tools Proxy (инструменты доступа к контенту)
 - Document / Ingestion / Retrieval service
+- Open WebUI Adapter (OpenAI-совместимый шлюз к Gateway + Open WebUI)
 
 Полезные спецификации и схемы лежат в `docs/`.
 
@@ -18,7 +19,7 @@
 docker compose up --build
 ```
 
-Порты по умолчанию: API Gateway — `localhost:8080`, Safety — `8081`, MCP — `8082`, LLM — `8090`, Orchestrator — `8070`, Document — `8060`, Ingestion — `8050`, Retrieval — `8040`.
+Порты по умолчанию: API Gateway — `localhost:8080`, Safety — `8081`, MCP — `8082`, LLM — `8090`, Orchestrator — `8070`, Document — `8060`, Ingestion — `8050`, Retrieval — `8040`, OpenWebUI Adapter — `8093`, Open WebUI — `3000`.
 
 Остановить — `docker compose down`. Для перезапуска конкретного сервиса используйте `docker compose up --build <service_name>`.
 

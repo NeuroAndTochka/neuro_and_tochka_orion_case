@@ -10,6 +10,7 @@ from api_gateway.dependencies import (
     get_rate_limiter,
     get_safety_client,
 )
+from api_gateway.config import Settings, get_settings
 from api_gateway.schemas import AssistantQueryRequest, AssistantResponse, AssistantResponseMeta, AssistantSource
 
 router = APIRouter(prefix="/api/v1/assistant", tags=["assistant"])
@@ -22,8 +23,10 @@ async def query_assistant(
     safety_client: SafetyClient = Depends(get_safety_client),
     orchestrator_client: OrchestratorClient = Depends(get_orchestrator_client),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
+    settings: Settings = Depends(get_settings),
 ) -> AssistantResponse:
-    await rate_limiter.check(key=f"assistant:{user.tenant_id}:{user.user_id}")
+    resolved_tenant = settings.default_tenant_id or user.tenant_id
+    await rate_limiter.check(key=f"assistant:{resolved_tenant}:{user.user_id}")
     ctx = get_request_context()
 
     context_payload = None
@@ -40,7 +43,7 @@ async def query_assistant(
             "meta": {"trace_id": ctx.trace_id},
             "user": {
                 "user_id": user.user_id,
-                "tenant_id": user.tenant_id,
+                "tenant_id": resolved_tenant,
                 "roles": user.roles,
             },
         }
@@ -55,10 +58,10 @@ async def query_assistant(
     downstream_payload.update(
         {
             "trace_id": ctx.trace_id,
-            "tenant_id": user.tenant_id,
+            "tenant_id": resolved_tenant,
             "user": {
                 "user_id": user.user_id,
-                "tenant_id": user.tenant_id,
+                "tenant_id": resolved_tenant,
                 "roles": user.roles,
             },
             "safety": safety_result,

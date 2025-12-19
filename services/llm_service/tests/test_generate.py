@@ -17,7 +17,7 @@ def base_payload(message: str):
                 "page_end": 2,
             }
         ],
-        "generation_params": {"max_tokens": 64},
+        "generation_params": {},
     }
 
 
@@ -38,3 +38,19 @@ def test_generate_with_tool_call_loop():
         data = resp.json()
         assert data["tools_called"]
         assert data["meta"]["tool_steps"] == 1
+
+
+def test_generate_accepts_openai_chat_payload():
+    openai_payload = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": "hi"}],
+        "tools": [],
+        "context": [],
+    }
+    with TestClient(app) as client:
+        resp = client.post("/internal/llm/generate", json=openai_payload)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "choices" in body
+        assert "usage" in body
+        assert body["choices"][0]["message"]["role"] == "assistant"

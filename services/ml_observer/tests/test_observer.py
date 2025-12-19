@@ -85,3 +85,20 @@ def test_experiment_flow():
         assert resp.status_code == 200
         detail = resp.json()
         assert len(detail["runs"]) >= 2
+
+
+def test_orchestrator_proxy_requires_config():
+    with TestClient(app) as client:
+        resp = client.post(
+            "/internal/observer/orchestrator/respond",
+            json={"query": "test orchestrator"},
+            headers=tenant_headers(),
+        )
+        assert resp.status_code == 503
+        assert "orchestrator" in resp.text
+
+
+def test_orchestrator_config_endpoints_require_config():
+    with TestClient(app) as client:
+        resp = client.get("/internal/observer/orchestrator/config", headers=tenant_headers())
+        assert resp.status_code == 503

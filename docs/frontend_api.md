@@ -1,19 +1,14 @@
 # Документация для фронтенда
 
-Ниже приведён экспортируемый OpenAPI-файл, описывающий все внешние endpoint'ы, доступные из браузера/клиентских приложений. Комментарии внутри YAML отмечают необязательные поля и бизнес-требования.
+Минимальный OpenAPI-дескриптор публичных endpoint'ов API Gateway. Все запросы требуют HTTPS и заголовок `Authorization` (кроме health).
 
 ```yaml
 openapi: 3.0.3
 info:
   title: Orion Public API
   version: 1.0.0
-  description: >-
-    Внешние endpoint'ы API Gateway. Все запросы требуют HTTPS и заголовок Authorization (кроме health).
 servers:
   - url: https://api.orion.internal
-    description: PROD
-  - url: https://staging.api.orion.internal
-    description: STAGING
 paths:
   /api/v1/health:
     get:
@@ -44,8 +39,6 @@ paths:
   /api/v1/assistant/query:
     post:
       summary: RAG ассистент
-      description: |
-        Основной чат-эндпоинт. # Обязателен Authorization header
       security:
         - bearerAuth: []
       requestBody:
@@ -62,7 +55,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AssistantResponse'
         '400':
-          description: Ошибка валидации или блок от safety
+          description: Ошибка валидации или блокировка safety
           content:
             application/json:
               schema:
@@ -70,8 +63,6 @@ paths:
   /api/v1/documents:
     get:
       summary: Список документов
-      description: |
-        Возвращает документы пользователя. # query-параметры являются необязательными фильтрами
       security:
         - bearerAuth: []
       parameters:
@@ -121,8 +112,6 @@ paths:
   /api/v1/documents/upload:
     post:
       summary: Загрузка документа
-      description: |
-        Принимает multipart. # файл обязателен, остальные поля опциональны
       security:
         - bearerAuth: []
       requestBody:
@@ -214,6 +203,9 @@ components:
         section_id:
           type: string
           nullable: true
+        section_title:
+          type: string
+          nullable: true
         page_start:
           type: integer
           nullable: true
@@ -249,6 +241,14 @@ components:
           type: array
           items:
             type: string
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
     DocumentDetail:
       allOf:
         - $ref: '#/components/schemas/DocumentItem'
@@ -261,6 +261,7 @@ components:
               type: array
               items:
                 type: object
+                additionalProperties: true
     DocumentUploadResponse:
       type: object
       properties:
@@ -277,7 +278,6 @@ components:
 ```
 
 ## Комментарии для фронтенда
-1. **Локализация.** Поле `language` в `AssistantQueryRequest` переключает язык ответа. Пока поддерживаются `ru` и `en`.
-2. **Trace ID.** Клиент получает `meta.trace_id` и может использовать его для обращения в саппорт.
-3. **Документы.** Список документов всегда фильтруется по tenant_id текущего пользователя — дополнительных параметров передавать не нужно.
-4. **Загрузка.** После `202 Accepted` фронт должен периодически опрашивать `/api/v1/documents/{doc_id}` или страницу списка, чтобы узнать, когда документ перешёл в статус `ready`.
+1. `meta.trace_id` из ответа ассистента сохраняем для саппорта и корреляции логов.
+2. После `202 Accepted` загрузки нужно периодически запрашивать `/api/v1/documents/{doc_id}` или список документов, чтобы дождаться статуса `indexed`/`failed` (ingestion асинхронен).
+3. В mock-режиме ответы могут быть пустыми/заглушками, но форма данных совпадает с продовой.

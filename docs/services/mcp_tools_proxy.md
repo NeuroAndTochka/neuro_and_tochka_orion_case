@@ -1,54 +1,22 @@
 # MCP Tools Proxy
 
 ## Назначение
-MCP Tools Proxy — прослойка между LLM Service и корпоративными источниками данных. Он реализует Model Context Protocol, проверяет разрешения пользователя и накладывает лимиты на вызовы инструментов.
+Промежуточный слой между LLM runtime и внутренними данными. Предоставляет набор ограниченных инструментов, применяет rate limit и проверку tenant на основе метаданных документа.
 
-## Архитектура
-- FastAPI приложение (`services/mcp_tools_proxy`).
-- Реестр инструментов (`core/executor.ToolRegistry`).
-- Встроенные инструменты расположены в `tools/` (например, `local_search`).
-- Конфигурация через `MCP_PROXY_*`.
+## Эндпоинт
+- `POST /internal/mcp/execute` — `tool_name`, `arguments`, `user{user_id,tenant_id,roles?}`, `trace_id?`. Ответ `{status: ok|error, result?|error?, trace_id}`.
+- `/health` — `{"status":"ok"}`.
 
-## Конфигурация
-| Переменная | Описание |
-| --- | --- |
-| `MCP_PROXY_MAX_PAGES_PER_CALL` | Ограничение на выдачу документов. |
-| `MCP_PROXY_MAX_TEXT_BYTES` | Ограничение на payload в байтах. |
-| `MCP_PROXY_RATE_LIMIT_CALLS` | Кол-во вызовов в минуту на пользователя. |
-| `MCP_PROXY_RATE_LIMIT_TOKENS` | Ограничение на суммарный размер ответов. |
-| `MCP_PROXY_BLOCKLIST_KEYWORDS` | Слова, запрещённые в аргументах. |
-| `MCP_PROXY_MOCK_MODE` | Возвращать заглушки. |
+## Доступные инструменты
+- `read_doc_section` — doc_id + section_id, возвращает текст секции (обрезает по `max_text_bytes`).
+- `read_doc_pages` — doc_id + page_start/page_end (лимит `max_pages_per_call`).
+- `read_doc_metadata` — doc_id → метаданные/секции.
+- `doc_local_search` — doc_id + query + max_results≤5, возвращает сниппеты.
+- `read_chunk_window` — doc_id + anchor_chunk_id (+ окна/`radius`), ходит в Retrieval `/chunks/window`, режет текст до `max_text_bytes`, проверяет радиус окна (per-side).
+- `list_available_tools` — перечисление всех инструментов.
 
-## API
-### `POST /internal/mcp/execute`
-**Request**
-```json
-{
-  "tool": "local_search",
-  "arguments": {"query": "LDAP"},
-  "user": {"user_id": "demo", "tenant_id": "tenant_1"},
-  "trace_id": "trace-abc"
-}
-```
-**Response**
-```json
-{
-  "status": "ok",
-  "result": {
-    "chunks": [
-      {"doc_id": "doc_1", "section_id": "sec_intro", "text": "LDAP ..."}
-    ]
-  },
-  "metrics": {"duration_ms": 45}
-}
-```
-В случае ошибок `status="error"` и поле `error` содержит описание.
+## Конфигурация (`MCP_PROXY_*`)
+`max_pages_per_call`, `max_text_bytes`, `rate_limit_calls`, `rate_limit_tokens`, `max_window_radius` (`RAG_WINDOW_RADIUS`/`MCP_PROXY_MAX_WINDOW_RADIUS`, легаси `MCP_PROXY_MAX_CHUNK_WINDOW` → радиус), `retrieval_window_url`, `retrieval_timeout`, `blocklist_keywords`, `mock_mode`.
 
-## Расширение
-1. Добавьте новый модуль в `tools/` и регистрируйте его в `core/executor.py`.
-2. Обновите документацию ниже и README сервиса.
-3. Напишите интеграционные тесты (`services/mcp_tools_proxy/tests`).
-
-## Mock требования
-- При mock_mode каждый инструмент обязан возвращать структуру с ключами `status`, `result`, `metrics`, даже если `result` пустой.
-- При изменении API инструмента необходимо синхронно обновить mock-данные в LLM Service (чтобы tool traces отображались корректно).
+## Источники данных
+Документы лежат в in-memory `DocumentRepository` (засеян `doc_1`/`tenant_1`). Tenant проверяется локально; при `mock_mode` разрешены заглушки. Для `read_chunk_window` требуется настроенный Retrieval URL, иначе вернётся `503`.

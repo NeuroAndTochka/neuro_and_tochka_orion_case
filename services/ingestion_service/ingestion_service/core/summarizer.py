@@ -21,14 +21,17 @@ class Summarizer:
         self.settings = settings
         self._mock = settings.mock_mode or not settings.summary_api_base
         self._logger = structlog.get_logger(__name__)
-        self.system_prompt = (
-            "Сделай короткое русскоязычное резюме секции документа (1-2 предложения). "
-            "Без воды, без списков, только факты."
-        )
+        self.system_prompt = """
+        Сделай структурированное резюме секции в 4–8 буллетов.
+
+        Правила:
+        - Максимум 900 символов.
+        - Сохраняй команды, параметры, имена пакетов/сервисов/файлов дословно.
+        - Если есть процедура/шаги — перечисли их нумерованным списком.
+        - Не добавляй ничего от себя, только то, что есть в тексте.
+        """
         self.model = settings.summary_model
-        self.max_tokens = 120
         self.use_roles = True
-        self.timeout = 30.0
 
         self._client = None
         if not self._mock and OpenAI:
@@ -48,7 +51,9 @@ class Summarizer:
             return []
         if self._mock or not self._client:
             if not self._client and not self._mock:
-                self._logger.warning("summary_fallback", reason="OpenAI client not initialized")
+                self._logger.warning(
+                    "summary_fallback", reason="OpenAI client not initialized"
+                )
             self._logger.info("summary_mock", items=len(texts), model=self.model)
             return [self._fallback(text) for text in texts]
 
@@ -66,20 +71,35 @@ class Summarizer:
                 resp = self._client.chat.completions.create(
                     model=self.model,
                     messages=messages,
-                    max_tokens=self.max_tokens,
-                    temperature=0.2,
-                    timeout=self.timeout,
                 )
-                content = resp.choices[0].message.content if resp and resp.choices else ""
-                latency_ms = int((time.perf_counter() - started) * 1000)
-                results.append(DocumentParser._clean_text(content or "") or self._fallback(text))
+                raw_content = (
+                    resp.choices[0].message.content if resp and resp.choices else ""
+                )
                 self._logger.info(
-                    "summary_response",
-                    status="ok",
-                    model=self.model,
-                    latency_ms=latency_ms,
-                    completion_chars=len(content or ""),
+                    "summary_raw_content", model=self.model, raw=raw_content
                 )
+                extracted = self._extract_text(raw_content)
+                cleaned = DocumentParser._clean_text(extracted)
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                if not cleaned:
+                    fallback_text = self._fallback(text)
+                    results.append(fallback_text)
+                    self._logger.warning(
+                        "summary_empty_response",
+                        model=self.model,
+                        latency_ms=latency_ms,
+                        completion_chars=len(extracted or ""),
+                        fallback_chars=len(fallback_text),
+                    )
+                else:
+                    results.append(cleaned)
+                    self._logger.info(
+                        "summary_response",
+                        status="ok",
+                        model=self.model,
+                        latency_ms=latency_ms,
+                        completion_chars=len(cleaned),
+                    )
             except Exception as exc:  # pragma: no cover - network path
                 self._logger.warning(
                     "summary_fallback",
@@ -98,7 +118,6 @@ class Summarizer:
         return {
             "system_prompt": self.system_prompt,
             "model": self.model,
-            "max_tokens": self.max_tokens,
             "use_roles": self.use_roles,
         }
 
@@ -107,15 +126,12 @@ class Summarizer:
         *,
         system_prompt: str | None = None,
         model: str | None = None,
-        max_tokens: int | None = None,
         use_roles: bool | None = None,
     ) -> dict:
         if system_prompt is not None:
             self.system_prompt = system_prompt
         if model is not None:
             self.model = model
-        if max_tokens is not None:
-            self.max_tokens = max_tokens
         if use_roles is not None:
             self.use_roles = use_roles
         return self.get_config()
@@ -128,3 +144,25 @@ class Summarizer:
                 {"role": "user", "content": user_content},
             ]
         return [{"role": "user", "content": f"{self.system_prompt}\n\n{user_content}"}]
+
+    @staticmethod
+    def _extract_text(content) -> str:
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    text = block.get("text") or block.get("output_text") or ""
+                    if isinstance(text, str):
+                        parts.append(text)
+                elif hasattr(block, "text"):
+                    text_val = getattr(block, "text", "")
+                    if isinstance(text_val, str):
+                        parts.append(text_val)
+            return "\n".join(parts)
+        if hasattr(content, "text") and isinstance(getattr(content, "text"), str):
+            return getattr(content, "text")
+        return ""

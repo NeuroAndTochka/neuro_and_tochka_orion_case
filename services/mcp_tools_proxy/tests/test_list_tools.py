@@ -20,3 +20,4 @@ def test_list_tools_returns_tool_names() -> None:
         data = resp.json()
         assert data["status"] == "ok"
         assert "read_doc_section" in data["result"]["tools"]
+        assert "read_chunk_window" in data["result"]["tools"]

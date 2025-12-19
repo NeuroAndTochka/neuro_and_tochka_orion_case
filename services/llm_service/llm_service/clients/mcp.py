@@ -25,7 +25,7 @@ class MCPClient:
             "trace_id": trace_id,
         }
         try:
-            response = await self.http_client.post(self.settings.mcp_proxy_url, json=payload, timeout=15)
+            response = await self.http_client.post(self.settings.mcp_proxy_url, json=payload)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as exc:  # pragma: no cover
